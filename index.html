@@ -916,6 +916,35 @@
     margin-top: 10px;
     font-weight: 700;
   }
+  .earn-content .cautions {
+    list-style: none;
+    margin-top: 14px;
+    padding: 14px 16px;
+    background: linear-gradient(135deg, rgba(255, 228, 233, 0.6), rgba(255, 243, 220, 0.6));
+    border-left: 4px solid var(--coral);
+    border-radius: 10px;
+  }
+  .earn-content .cautions li {
+    font-size: 13px;
+    color: var(--navy);
+    font-weight: 700;
+    line-height: 1.7;
+    padding-left: 22px;
+    position: relative;
+  }
+  .earn-content .cautions li + li { margin-top: 4px; }
+  .earn-content .cautions li::before {
+    content: "⚠️";
+    position: absolute;
+    left: 0;
+    top: 0;
+    font-size: 12px;
+  }
+  .earn-content .cautions li strong {
+    font-family: var(--font-display);
+    color: var(--coral);
+    font-weight: 900;
+  }
   .earn-content .pt-show {
     margin-top: 16px;
     display: inline-flex;
@@ -1155,6 +1184,22 @@
     font-weight: 900;
     color: var(--navy);
   }
+  .timing-box .timing-note {
+    margin-top: 12px;
+    display: inline-block;
+    background: white;
+    color: var(--coral);
+    font-family: var(--font-display);
+    font-weight: 900;
+    font-size: 13px;
+    padding: 8px 16px;
+    border-radius: 999px;
+    border: 2px solid var(--coral);
+    box-shadow: 0 2px 8px rgba(232, 90, 79, 0.15);
+  }
+  @media (max-width: 768px) {
+    .timing-box .timing-note { font-size: 11px; padding: 6px 12px; }
+  }
   .cash-calendar {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -1372,7 +1417,8 @@
     </h1>
     <p class="hero-subtitle">
       働くほど、つながるほど、ポイントが貯まる。<br class="br-pc">
-      <strong>1pt ＝ 1円</strong> で現金に換えられる応援アプリ、はじまりました。
+      <strong>1日 ＝ 5pt</strong> で現金に・・・<br class="br-pc">
+      お給与とは別で貯金できる、新しいポイントです。
     </p>
     <a href="https://kaigooenpointo.com/" class="hero-cta" target="_blank" rel="noopener">
       今すぐはじめる <span class="arrow">→</span>
@@ -1575,6 +1621,10 @@
         <div class="badge"><span class="num">3</span><span class="label">INVITE</span></div>
         <h3>アプリにお友達を紹介する</h3>
         <p>介護に関わる方を紹介 → 登録完了で <strong>100pt</strong>、紹介した方がプロフィール入力すると <strong>追加 500pt</strong> がもらえます。</p>
+        <ul class="cautions">
+          <li>ご招待は<strong>1人あたり最大 5名まで</strong></li>
+          <li><strong>介護に関わる方</strong>をご招待ください</li>
+        </ul>
         <div class="pt-show">
           <span class="prefix">最大</span>
           <span class="num">600</span>
@@ -1836,6 +1886,7 @@
       <div class="timing-box">
         <span class="label">付与タイミング</span>
         <p>毎月月末締め → 翌月中頃に付与</p>
+        <div class="timing-note">⚠️ ホップで介護施設で働くことが条件となります</div>
       </div>
 
       <div class="cash-calendar">
