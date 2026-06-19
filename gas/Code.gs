@@ -117,6 +117,7 @@ function runDailyAggregation(monthArg) {
   const judgeByPhone = {};       // 電話 → 'A'|'B'|'C'|'other'（⑤を4条件で判定）
   const dailyMap = {};
   const reDailySeen = {};        // 日次の再応募を電話ユニークにするための既出管理
+  const rePhoneInMonth = {};     // 当月に再応募した電話（歩留の再応募コホート判定用）
   const range = monthRange_(month);
 
   // --- オフィス集計器（マスタ基準で初期化） ---
@@ -160,6 +161,7 @@ function runDailyAggregation(monthArg) {
     } else {                                          // 2回目以降=再応募（電話ユニーク）
       const set = reUniqByOffice[x.office] || (reUniqByOffice[x.office] = new Set());
       set.add(x.phone);
+      rePhoneInMonth[x.phone] = true;                 // 当月の再応募者
       if (!reDailySeen[x.phone]) { reDailySeen[x.phone] = true; dailyMap[key].re += 1; } // 日次もユニーク
     }
   });
@@ -207,8 +209,8 @@ function runDailyAggregation(monthArg) {
     if (fd) {
       if (inRange_(fd, range.monthStart, range.monthEnd)) cohorts.push('currentMonthNew');
       if (inRange_(fd, range.twoMonthStart, range.monthEnd)) cohorts.push('within2MonthsNew');
-      if (fd < range.monthStart) cohorts.push('reApplication');
     }
+    if (rePhoneInMonth[phone]) cohorts.push('reApplication'); // 当月に再応募した人のみ
     cohorts.forEach(c => {
       const f = acc[office].funnel[c];
       FUNNEL_STAGES.forEach(([outKey, idxKey]) => {
