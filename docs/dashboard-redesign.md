@@ -207,6 +207,10 @@
 {
   "generatedAt": "2026-06-19T06:00:00+09:00",
   "month": "2026-06",
+  "daily": [
+    { "date": "2026-06-18", "new": 11, "re": 2, "total": 13 },
+    { "date": "2026-06-19", "new": 9,  "re": 3, "total": 12 }
+  ],
   "offices": [
     {
       "office": "新宿オフィス",
@@ -216,13 +220,15 @@
         "reApplications": 8,
         "targetNew": 60,
         "forecast": 55,
-        "contacts": 30
+        "contacts": 30,
+        "newAB": 14,
+        "reAB": 3
       },
       "selection": { "A": 5, "B": 10, "C": 8, "other": 3, "unknown": 2 },
       "funnel": {
-        "currentMonthNew":   { "set": 20, "done": 15, "decided": 8, "started": 5 },
-        "within2MonthsNew":  { "set": 10, "done": 7,  "decided": 4, "started": 2 },
-        "reApplication":     { "set": 6,  "done": 4,  "decided": 2, "started": 1 }
+        "currentMonthNew":   { "set": 20, "done": 15, "decided": 8, "started": 5, "ab": 9 },
+        "within2MonthsNew":  { "set": 10, "done": 7,  "decided": 4, "started": 2, "ab": 5 },
+        "reApplication":     { "set": 6,  "done": 4,  "decided": 2, "started": 1, "ab": 2 }
       }
     }
   ]
@@ -230,9 +236,12 @@
 ```
 
 ポイント:
-- オフィス 1 件 = 1 オブジェクト。合計行は表示側で算出（または `totals` を別途持たせる）。
+- `daily`: **全体（全オフィス合算）の日次推移**。一覧ビューのグラフ用（積み上げ棒＝新規＋再応募、線＝総応募）。
+- `overview.newAB` / `overview.reAB`: 新規・再応募に含まれる **A+B 人選の人数（参考値）**。
+- `funnel.*.ab`: 各応募区分の **A+B 人選の人数（参考値）**。
+- オフィス 1 件 = 1 オブジェクト。合計行は表示側で算出。
 - すべて **集計済みの小さな数値** のみ（生ファイル・個人データは渡さない）。
-- 表示はこの JSON をテーブルに流すだけ。差し替え＝ `fetch()` 先を GAS の API に向けるだけ。
+- 表示はこの JSON をテーブル／グラフに流すだけ。差し替え＝ `fetch()` 先を GAS の API に向けるだけ。
 
 ---
 
