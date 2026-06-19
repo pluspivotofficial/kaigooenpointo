@@ -106,13 +106,13 @@
 <div class="wrap">
   <header class="top">
     <div class="title">
-      <h1>応募ダッシュボード <span style="font-size:12px;color:var(--coral)">MOCK / 叩き台</span></h1>
+      <h1>応募ダッシュボード</h1>
       <p>オフィス別｜総応募・MCG・人選を突合した集計ビュー</p>
     </div>
     <div class="controls">
       <select id="monthSel">
-        <option value="2026-06">2026年6月</option>
         <option value="2026-05">2026年5月</option>
+        <option value="2026-06">2026年6月</option>
       </select>
       <button class="refresh" id="refreshBtn">更新</button>
     </div>
@@ -179,11 +179,13 @@ const SAMPLE_DATA = {
 
 /* GAS Web アプリ（doGet）のデプロイURL。空文字のままだと SAMPLE_DATA で動作（モック）。
    本番は "https://script.google.com/macros/s/XXXX/exec" を設定するだけで接続される。 */
-const API_URL = "";
+const API_URL = "https://script.google.com/macros/s/AKfycbwjOtebUtp2o37keXyG9_3OIu5euayYoFlz-R5J_MMPVGZS3nYldAVfCllnopM_TFM/exec";
 async function loadFromApi(month){
   const res = await fetch(`${API_URL}?month=${encodeURIComponent(month)}`);
   if(!res.ok) throw new Error("API "+res.status);
-  return await res.json();
+  const json = await res.json();
+  if(json.error) throw new Error(json.error+"（"+month+"）");
+  return json;
 }
 
 /* モック専用: 日次データを生成（本番は集計層が daily を埋める） */
@@ -341,8 +343,9 @@ function render(){
 
 async function refresh(){
   if(API_URL){
+    $("#updated").textContent="読み込み中…";
     try{ DATA = await loadFromApi($("#monthSel").value); }
-    catch(err){ alert("データ取得に失敗しました: "+err.message); return; }
+    catch(err){ $("#updated").textContent="データ取得に失敗: "+err.message; return; }
   }
   render();
 }
