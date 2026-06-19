@@ -16,8 +16,8 @@
  *         接触/歩留/人選はこの1ファイルから集計する。
  *
  * ▼要確認（コード内 TODO）:
- *   - 新規/再応募の判定ルール（重複応募・有効応募の解釈）… resolveKind_()
- *   - 電話応募（総応募CSVに無い）の取り込み … MCG稼働データ(③)の利用要否
+ *   - 新規/再応募は累積シート内で電話番号の初出判定（初出=新規 / 以降=再応募）
+ *   - 電話応募 = MCG(⑤)にあり総応募に無い電話。新規に加算し phoneApplications に内訳化
  */
 
 /* =========================================================================
@@ -55,7 +55,7 @@ const COL = {
     office: '拠点',
     pref: '都道府県名',
     media: '媒体',
-    dup: '重複応募',     // 同一人物の応募回数（≦1=新規 / ≧2=再応募）。有効応募列は不使用
+    // 新規/再応募は重複応募列に頼らず、電話番号の初出で判定（累積シート内で重複判定）
   },
   mcg: {    // MCG人選データ(⑤)（接触/歩留/人選）
     phone: '電話番号',
@@ -105,8 +105,8 @@ function runDailyAggregation(monthArg) {
   const totalRows = readLatestCsv_(CONFIG.TOTAL_FOLDER_ID, CONFIG.CHARSET_TOTAL);
   const mcgRows = readLatestCsv_(CONFIG.SELECTION_FOLDER_ID, CONFIG.CHARSET_SELECTION); // ⑤
 
-  const kindByPhone = {};        // 電話 → 'new' | 're'（総応募由来）
   const totalPhoneSet = {};      // 総応募に存在する電話（電話応募判定用）
+  const firstDateByPhone = {};   // 電話 → 初回応募日（累積シートでの重複判定）
   const judgeByPhone = {};       // 電話 → 'A'|'B'|'C'|'other'|'unknown'（⑤由来）
   const dailyMap = {};
   const range = monthRange_(month);
@@ -119,32 +119,38 @@ function runDailyAggregation(monthArg) {
 
   // 人選参照表
   mcgRows.forEach(r => { judgeByPhone[normPhone_(r[COL.mcg.phone])] = judgeLetter_(r[COL.mcg.judge]); });
-  // 総応募の電話一覧（全行・全期間）
-  totalRows.forEach(r => { const p = normPhone_(r[COL.total.phone]); if (p) totalPhoneSet[p] = true; });
 
-  // --- ① 総応募: 新規/再応募・A+B参考値・日次（重複応募で区分。有効応募は不使用） ---
+  // --- 重複判定: 累積シートを応募日昇順に走査し、電話の初出=新規・以降=再応募 ---
+  const parsed = totalRows.map(r => ({
+    office: r[COL.total.office] || prefToOffice[(r[COL.total.pref] || '').trim()],
+    phone: normPhone_(r[COL.total.phone]),
+    d: parseDate_(r[COL.total.applyDate]),
+  })).filter(x => x.d);
+  parsed.sort((a, b) => a.d - b.d);
+  parsed.forEach(x => {
+    if (x.phone) {
+      totalPhoneSet[x.phone] = true;
+      x.first = !firstDateByPhone[x.phone];          // この電話の初回行か（=新規=1 / 再応募=0）
+      if (x.first) firstDateByPhone[x.phone] = x.d;
+    } else { x.first = true; }
+  });
+
+  // --- ① 総応募: 当月の新規/再応募・A+B参考値・日次 ---
   const reUniqByOffice = {};
-  totalRows.forEach(r => {
-    const office = r[COL.total.office] || prefToOffice[(r[COL.total.pref] || '').trim()];
-    if (!office || !acc[office]) return;
-    const phone = normPhone_(r[COL.total.phone]);
-    const kind = resolveKind_(r);                   // 'new' | 're'
-    kindByPhone[phone] = kind;
-    const d = parseDate_(r[COL.total.applyDate]);
-    if (!inRange_(d, range.monthStart, range.monthEnd)) return;
-    const ab = judgeByPhone[phone] === 'A' || judgeByPhone[phone] === 'B';
-
-    if (kind === 'new') {
-      acc[office].overview.newApplications += 1;
-      if (ab) acc[office].overview.newAB += 1;
-    } else {
-      reUniqByOffice[office] = reUniqByOffice[office] || new Set();
-      if (phone) reUniqByOffice[office].add(phone);   // 再応募は電話でユニーク
-      if (ab) acc[office].overview.reAB += 1;
+  parsed.forEach(x => {
+    if (!x.office || !acc[x.office] || !inRange_(x.d, range.monthStart, range.monthEnd)) return;
+    const ab = judgeByPhone[x.phone] === 'A' || judgeByPhone[x.phone] === 'B';
+    if (x.first) {                                    // 初回=新規
+      acc[x.office].overview.newApplications += 1;
+      if (ab) acc[x.office].overview.newAB += 1;
+    } else {                                          // 2回目以降=再応募（電話でユニーク）
+      reUniqByOffice[x.office] = reUniqByOffice[x.office] || new Set();
+      if (x.phone) reUniqByOffice[x.office].add(x.phone);
+      if (ab) acc[x.office].overview.reAB += 1;
     }
-    const key = fmtDate_(d);
+    const key = fmtDate_(x.d);
     dailyMap[key] = dailyMap[key] || { new: 0, re: 0 };
-    if (kind === 'new') dailyMap[key].new += 1; else dailyMap[key].re += 1;
+    if (x.first) dailyMap[key].new += 1; else dailyMap[key].re += 1;
   });
   Object.keys(reUniqByOffice).forEach(o => { acc[o].overview.reApplications = reUniqByOffice[o].size; });
 
@@ -166,7 +172,7 @@ function runDailyAggregation(monthArg) {
         acc[office].overview.phoneApplications += 1;
         acc[office].overview.newApplications += 1;
         if (letter === 'A' || letter === 'B') acc[office].overview.newAB += 1;
-        kindByPhone[phone] = 'new'; // 歩留でも新規扱い
+        firstDateByPhone[phone] = d; // 歩留でも当月の新規扱い
       }
     }
 
@@ -178,15 +184,14 @@ function runDailyAggregation(monthArg) {
     // 人選（当月応募・A/B/C/その他/不明）
     if (inMonth) bumpSelection_(acc[office].selection, letter);
 
-    // 歩留: コホート(応募日/区分) × 各ステージ「日付列が当月のもの」をカウント
+    // 歩留: コホート(初回応募日で判定) × 各ステージ「日付列が当月のもの」をカウント
     // 当月内応募・新規 ⊂ 2ヶ月以内応募・新規（当月含む直近2ヶ月）なので両方に加算しうる。
-    const kind = kindByPhone[phone];
+    const fd = firstDateByPhone[phone];   // 初回応募日（新規＝今月初出 / 再応募＝今月より前に初出）
     const cohorts = [];
-    if (kind === 'new') {
-      if (inRange_(d, range.monthStart, range.monthEnd)) cohorts.push('currentMonthNew');
-      if (inRange_(d, range.twoMonthStart, range.monthEnd)) cohorts.push('within2MonthsNew');
-    } else if (kind === 're') {
-      cohorts.push('reApplication');
+    if (fd) {
+      if (inRange_(fd, range.monthStart, range.monthEnd)) cohorts.push('currentMonthNew');
+      if (inRange_(fd, range.twoMonthStart, range.monthEnd)) cohorts.push('within2MonthsNew');
+      if (fd < range.monthStart) cohorts.push('reApplication');
     }
     cohorts.forEach(c => {
       const f = acc[office].funnel[c];
@@ -229,12 +234,6 @@ function runForMay2026() { return runDailyAggregation('2026-05'); }
 /* =========================================================================
  * 区分・人選の判定
  * ========================================================================= */
-// 新規/再応募の判定: 重複応募≦1=新規 / ≧2=再応募（有効応募は不使用）
-function resolveKind_(r) {
-  const dup = Number((r[COL.total.dup] || '').toString().trim()) || 0;
-  return dup <= 1 ? 'new' : 're';
-}
-
 // 人選ｽﾃｰﾀｽ文字列 → 'A'|'B'|'C'|'other'|'unknown'
 function judgeLetter_(v) {
   const s = (v || '').toString().trim();
