@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>応募ダッシュボード（モック）｜オフィス別</title>
+<!--
+  ===========================================================================
+  軽量ダッシュボード モック（叩き台）— ドリルダウン型（一覧 → オフィス詳細）
+  - 外部ライブラリ・外部フォント・画像なし。単一HTML + バニラJS + インラインSVG。
+  - SAMPLE_DATA を GAS が返す集計済みJSON（docs/dashboard-redesign.md のスキーマ）
+    に差し替えるだけで本番化できる。本番は loadFromApi() の fetch() を有効化。
+  ===========================================================================
+-->
+<style>
+  :root{
+    --navy:#1A2855; --navy-soft:#4a5578; --ink:#1f2640; --muted:#7a809c;
+    --line:#e7e9f2; --bg:#f5f6fb; --card:#ffffff;
+    --coral:#E85A4F; --gold:#E8A93F;
+    --green:#1f9d6b; --green-bg:#e7f6ef; --red:#d14535; --red-bg:#fdeceb;
+    --reblue:#6b86c9;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Meiryo", sans-serif;
+    color:#1f2640; background:var(--bg); line-height:1.5; font-size:14px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1100px;margin:0 auto;padding:20px 18px 60px}
+
+  header.top{display:flex;flex-wrap:wrap;align-items:flex-end;gap:14px;justify-content:space-between;margin-bottom:18px}
+  .title h1{font-size:20px;color:var(--navy);letter-spacing:.02em}
+  .title p{font-size:12px;color:var(--muted);margin-top:2px}
+  .controls{display:flex;gap:8px;align-items:center}
+  select,button{font:inherit;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:8px;padding:7px 11px;cursor:pointer}
+  button.refresh{background:var(--navy);color:#fff;border-color:var(--navy)}
+  .updated{font-size:11px;color:var(--muted);margin-top:12px}
+
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px}
+  .kpi .k-label{font-size:11px;color:var(--muted)}
+  .kpi .k-val{font-size:24px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums}
+  .kpi .k-sub{font-size:11px;color:var(--muted)}
+
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:16px}
+  .panel-head{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+  .panel-head h2{font-size:14px;color:var(--navy)}
+  .panel-head .hint{font-size:11px;color:var(--muted)}
+  .scroll{overflow-x:auto}
+  table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+  th,td{padding:9px 12px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line)}
+  th.l,td.l{text-align:left}
+  thead th{background:#fafbff;color:var(--navy-soft);font-size:12px;font-weight:700}
+  tbody td{font-size:13px}
+  td.office{font-weight:600;color:var(--ink)}
+  td.pref{font-size:11px;color:var(--muted);font-weight:400}
+  td.ref{color:var(--muted);font-size:12px}
+  tfoot td{background:#f4f5fb;font-weight:700;color:var(--navy);border-top:2px solid var(--line)}
+
+  tr.click{cursor:pointer}
+  tr.click:hover{background:#f0f3ff}
+  tr.click td.office::after{content:"›";color:var(--muted);margin-left:8px;font-weight:700}
+
+  .bar{display:inline-flex;align-items:center;gap:7px;justify-content:flex-end;width:100%}
+  .bar .track{flex:0 0 56px;height:7px;background:#eef0f6;border-radius:5px;overflow:hidden}
+  .bar .fill{height:100%;border-radius:5px;background:var(--coral)}
+  .bar .pct{font-size:11px;color:var(--muted);min-width:32px;text-align:right}
+
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700}
+  .pill.up{background:var(--green-bg);color:var(--green)}
+  .pill.down{background:var(--red-bg);color:var(--red)}
+
+  /* chart */
+  .chart-legend{display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--navy-soft);padding:10px 16px 0}
+  .chart-legend .sw{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;vertical-align:middle}
+  .chart-wrap{padding:6px 10px 14px}
+  svg{display:block;width:100%;height:auto}
+  .gridln{stroke:#eef0f6;stroke-width:1}
+  .axis{fill:var(--muted);font-size:10px}
+  .totline{fill:none;stroke:var(--navy);stroke-width:1.6}
+  .totdot{fill:var(--navy)}
+
+  /* detail */
+  .back{background:none;border:none;color:var(--coral);font-weight:700;padding:0;cursor:pointer;margin-bottom:12px}
+  .detail-head{display:flex;align-items:baseline;gap:10px;margin-bottom:14px}
+  .detail-head h2{font-size:22px;color:var(--navy)}
+  .detail-head .pref{font-size:12px;color:var(--muted)}
+  .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;padding:14px 16px}
+  .stat{border:1px solid var(--line);border-radius:10px;padding:11px 13px}
+  .stat .s-l{font-size:11px;color:var(--muted)}
+  .stat .s-v{font-size:21px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums}
+  .stat .s-ref{font-size:11px;color:var(--coral);font-weight:700;margin-top:2px}
+  .sel-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;padding:14px 16px}
+  .sel{text-align:center;border:1px solid var(--line);border-radius:10px;padding:11px 6px}
+  .sel .s-v{font-size:22px;font-weight:700;color:var(--navy)}
+  .sel .s-l{font-size:11px;color:var(--muted)}
+  .sel.tagA{border-top:3px solid var(--green)} .sel.tagB{border-top:3px solid var(--gold)}
+  .sel.tagC{border-top:3px solid var(--coral)} .sel.tagO{border-top:3px solid var(--navy-soft)}
+  .sel.tagU{border-top:3px solid #c2c7da}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--muted);padding:10px 16px 0}
+  th.ref,td.refcol{color:var(--coral)}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="title">
+      <h1>応募ダッシュボード</h1>
+      <p>オフィス別｜総応募・MCG・人選を突合した集計ビュー</p>
+    </div>
+    <div class="controls">
+      <select id="monthSel">
+        <option value="2026-05">2026年5月</option>
+        <option value="2026-06">2026年6月</option>
+      </select>
+      <button class="refresh" id="refreshBtn">更新</button>
+    </div>
+  </header>
+
+  <!-- 一覧ビュー -->
+  <div id="listView">
+    <div class="kpis" id="kpis"></div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>日次の応募推移（全体）</h2><span class="hint">積み上げ＝総応募（新規＋再応募）／線＝総応募</span></div>
+      <div class="chart-legend">
+        <span><span class="sw" style="background:var(--coral)"></span>新規応募</span>
+        <span><span class="sw" style="background:var(--reblue)"></span>再応募</span>
+        <span><span class="sw" style="background:var(--navy)"></span>総応募</span>
+      </div>
+      <div class="chart-wrap" id="chart"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>オフィス一覧</h2><span class="hint">行をクリックで詳細へ</span></div>
+      <div class="scroll" id="listTable"></div>
+    </div>
+  </div>
+
+  <!-- 詳細ビュー -->
+  <div id="detailView" class="hidden"></div>
+
+  <p class="updated" id="updated"></p>
+</div>
+
+<script>
+/* ============================================================
+   サンプルデータ（GASの集計済みJSONと同一スキーマ）
+   本番では loadFromApi() に差し替え
+   ============================================================ */
+const SAMPLE_DATA = {
+  generatedAt: "2026-06-19T06:00:00+09:00",
+  month: "2026-06",
+  daily: [], // ← モックでは下の genDaily() で生成。本番は集計層が埋める: [{date,new,re,total}]
+  offices: [
+    { office:"新宿オフィス", prefectures:["東京都"],
+      overview:{ newApplications:42, phoneApplications:6, reApplications:8, targetNew:60, forecast:55, contacts:30, newAB:14, reAB:3 },
+      selection:{ A:5, B:10, C:8, other:3, unknown:2 },
+      funnel:{ currentMonthNew:{set:20,done:15,decided:8,started:5,ab:9}, within2MonthsNew:{set:10,done:7,decided:4,started:2,ab:5}, reApplication:{set:6,done:4,decided:2,started:1,ab:2} } },
+    { office:"横浜オフィス", prefectures:["神奈川県"],
+      overview:{ newApplications:38, phoneApplications:4, reApplications:5, targetNew:45, forecast:48, contacts:27, newAB:12, reAB:2 },
+      selection:{ A:6, B:8, C:6, other:2, unknown:4 },
+      funnel:{ currentMonthNew:{set:18,done:12,decided:7,started:4,ab:8}, within2MonthsNew:{set:8,done:5,decided:3,started:2,ab:4}, reApplication:{set:4,done:3,decided:1,started:1,ab:1} } },
+    { office:"大阪オフィス", prefectures:["大阪府","兵庫県"],
+      overview:{ newApplications:51, phoneApplications:9, reApplications:11, targetNew:55, forecast:63, contacts:40, newAB:20, reAB:4 },
+      selection:{ A:9, B:14, C:10, other:5, unknown:3 },
+      funnel:{ currentMonthNew:{set:26,done:19,decided:11,started:7,ab:13}, within2MonthsNew:{set:12,done:9,decided:5,started:3,ab:6}, reApplication:{set:8,done:6,decided:3,started:2,ab:3} } },
+    { office:"名古屋オフィス", prefectures:["愛知県"],
+      overview:{ newApplications:29, phoneApplications:3, reApplications:4, targetNew:40, forecast:34, contacts:19, newAB:8, reAB:1 },
+      selection:{ A:3, B:7, C:5, other:1, unknown:6 },
+      funnel:{ currentMonthNew:{set:13,done:8,decided:4,started:2,ab:5}, within2MonthsNew:{set:6,done:4,decided:2,started:1,ab:3}, reApplication:{set:3,done:2,decided:1,started:0,ab:1} } },
+    { office:"福岡オフィス", prefectures:["福岡県"],
+      overview:{ newApplications:33, phoneApplications:5, reApplications:7, targetNew:35, forecast:40, contacts:24, newAB:11, reAB:2 },
+      selection:{ A:4, B:9, C:7, other:2, unknown:3 },
+      funnel:{ currentMonthNew:{set:16,done:11,decided:6,started:4,ab:7}, within2MonthsNew:{set:7,done:5,decided:3,started:2,ab:4}, reApplication:{set:5,done:3,decided:2,started:1,ab:2} } }
+  ]
+};
+
+/* GAS Web アプリ（doGet）のデプロイURL。空文字のままだと SAMPLE_DATA で動作（モック）。
+   本番は "https://script.google.com/macros/s/XXXX/exec" を設定するだけで接続される。 */
+const API_URL = "https://script.google.com/macros/s/AKfycbwjOtebUtp2o37keXyG9_3OIu5euayYoFlz-R5J_MMPVGZS3nYldAVfCllnopM_TFM/exec";
+async function loadFromApi(month){
+  const res = await fetch(`${API_URL}?month=${encodeURIComponent(month)}`);
+  if(!res.ok) throw new Error("API "+res.status);
+  const json = await res.json();
+  if(json.error) throw new Error(json.error+"（"+month+"）");
+  return json;
+}
+
+/* モック専用: 日次データを生成（本番は集計層が daily を埋める） */
+function genDaily(month){
+  const days = month==="2026-06" ? 19 : 31;
+  const out=[];
+  for(let d=1; d<=days; d++){
+    const nw = Math.max(2, 9 + Math.round(5*Math.sin(d/2.5)) + (d%4));
+    const re = Math.max(0, Math.round(nw*0.18) + (d%3));
+    out.push({ date:`${month}-${String(d).padStart(2,"0")}`, new:nw, re:re, total:nw+re });
+  }
+  return out;
+}
+
+let DATA = SAMPLE_DATA;
+
+const $ = s => document.querySelector(s);
+const num = n => (n==null ? "–" : Number(n).toLocaleString("ja-JP"));
+const sum = (arr,path) => arr.reduce((a,o)=>a + path.split(".").reduce((x,k)=>x?.[k] ?? 0, o), 0);
+const pill = d => d>=0 ? `<span class="pill up">+${num(d)}</span>` : `<span class="pill down">${num(d)}</span>`;
+
+/* ---- KPI ---- */
+function renderKpis(){
+  const o=DATA.offices;
+  const newApp=sum(o,"overview.newApplications"), target=sum(o,"overview.targetNew");
+  const phone=sum(o,"overview.phoneApplications");
+  const fore=sum(o,"overview.forecast"), reApp=sum(o,"overview.reApplications"), contacts=sum(o,"overview.contacts");
+  const selTotal=["A","B","C","other","unknown"].reduce((a,k)=>a+sum(o,"selection."+k),0);
+  const rate=target?Math.round(newApp/target*100):0;
+  const kpi=(l,v,s)=>`<div class="kpi"><div class="k-label">${l}</div><div class="k-val">${v}</div><div class="k-sub">${s}</div></div>`;
+  $("#kpis").innerHTML=[
+    kpi("新規応募（合計）",num(newApp),`うち電話 ${num(phone)}・目標 ${num(target)}（${rate}%）`),
+    kpi("再応募（合計）",num(reApp),"過去データと重複"),
+    kpi("着地見込み（合計）",num(fore),pill(fore-target)+" 対目標"),
+    kpi("人選数（合計）",num(selTotal),"A〜不明の合計"),
+    kpi("接触数（合計）",num(contacts),"MCG 由来")
+  ].join("");
+}
+
+/* ---- 日次グラフ（インラインSVG・積み上げ棒＋総応募ライン） ---- */
+function renderChart(){
+  const daily=DATA.daily||[];
+  const W=720,H=200,padL=34,padR=12,padT=12,padB=26;
+  const n=daily.length||1;
+  const maxV=Math.max(1,...daily.map(d=>Math.max(d.total,(d.new||0)+(d.re||0))));
+  const plotW=W-padL-padR, plotH=H-padT-padB, base=padT+plotH;
+  const bw=Math.max(3, Math.min(22, plotW/n*0.62));
+  const cx=i=> padL + plotW*(i+0.5)/n;
+  const y=v=> padT + plotH*(1 - v/maxV);
+  // y目盛り
+  const ticks=4, grid=[];
+  for(let t=0;t<=ticks;t++){ const v=Math.round(maxV*t/ticks); const yy=y(v);
+    grid.push(`<line class="gridln" x1="${padL}" y1="${yy}" x2="${W-padR}" y2="${yy}"/><text class="axis" x="${padL-6}" y="${yy+3}" text-anchor="end">${v}</text>`); }
+  // 棒
+  const bars=daily.map((d,i)=>{
+    const x=cx(i)-bw/2;
+    const hNew=base-y(d.new), hRe=y(d.new)-y(d.new+d.re);
+    return `<rect x="${x}" y="${y(d.new)}" width="${bw}" height="${Math.max(0,hNew)}" fill="var(--coral)"/>`+
+           `<rect x="${x}" y="${y(d.new+d.re)}" width="${bw}" height="${Math.max(0,hRe)}" fill="var(--reblue)"/>`;
+  }).join("");
+  // 総応募ライン
+  const pts=daily.map((d,i)=>`${cx(i).toFixed(1)},${y(d.total).toFixed(1)}`).join(" ");
+  const dots=daily.map((d,i)=>`<circle class="totdot" cx="${cx(i).toFixed(1)}" cy="${y(d.total).toFixed(1)}" r="2"/>`).join("");
+  // x目盛り（約6個）
+  const step=Math.max(1,Math.ceil(n/6));
+  const xlab=daily.map((d,i)=> i%step===0 ? `<text class="axis" x="${cx(i)}" y="${H-8}" text-anchor="middle">${d.date.slice(5)}</text>`:"").join("");
+  $("#chart").innerHTML=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="日次応募推移">
+    ${grid.join("")}${bars}<polyline class="totline" points="${pts}"/>${dots}${xlab}
+  </svg>`;
+}
+
+/* ---- 一覧テーブル（人選数つき・クリックで詳細） ---- */
+function renderList(){
+  renderKpis(); renderChart();
+  const selT=o=>["A","B","C","other","unknown"].reduce((a,k)=>a+(o.selection[k]||0),0);
+  const rows=DATA.offices.map((o,i)=>{
+    const v=o.overview, rate=v.targetNew?Math.min(999,Math.round(v.newApplications/v.targetNew*100)):0;
+    return `<tr class="click" data-i="${i}">
+      <td class="l office">${o.office} <span class="pref">${(o.prefectures||[]).join("・")}</span></td>
+      <td>${num(v.newApplications)}</td>
+      <td>${num(v.reApplications)}</td>
+      <td>${num(v.targetNew)}</td>
+      <td><div class="bar"><span class="pct">${rate}%</span><span class="track"><span class="fill" style="width:${Math.min(100,rate)}%;${rate>=100?'background:var(--green)':''}"></span></span></div></td>
+      <td><span class="pill ${v.forecast>=v.targetNew?'up':'down'}">${num(v.forecast)}</span></td>
+      <td>${num(selT(o))}</td>
+      <td>${num(v.contacts)}</td>
+    </tr>`;
+  }).join("");
+  const o=DATA.offices, selTotal=o.reduce((a,x)=>a+selT(x),0);
+  $("#listTable").innerHTML=`<table>
+    <thead><tr><th class="l">オフィス</th><th>新規応募</th><th>再応募</th><th>目標(新規)</th><th>達成率</th><th>着地見込み</th><th>人選数</th><th>接触数</th></tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot><tr><td class="l">合計</td><td>${num(sum(o,"overview.newApplications"))}</td><td>${num(sum(o,"overview.reApplications"))}</td><td>${num(sum(o,"overview.targetNew"))}</td><td></td><td>${num(sum(o,"overview.forecast"))}</td><td>${num(selTotal)}</td><td>${num(sum(o,"overview.contacts"))}</td></tr></tfoot>
+  </table>`;
+  document.querySelectorAll("tr.click").forEach(tr=>tr.addEventListener("click",()=>showDetail(+tr.dataset.i)));
+}
+
+/* ---- 詳細: 1オフィス分（参考値つき） ---- */
+function showDetail(i){
+  const o=DATA.offices[i], v=o.overview;
+  const rate=v.targetNew?Math.round(v.newApplications/v.targetNew*100):0;
+  const statRef=(l,val,sub,ref)=>`<div class="stat"><div class="s-l">${l}</div><div class="s-v">${num(val)}</div>${sub?`<div class="s-l">${sub}</div>`:""}${ref!=null?`<div class="s-ref">うちA+B人選 ${num(ref)}</div>`:""}</div>`;
+  const stat=(l,val,sub="")=>`<div class="stat"><div class="s-l">${l}</div><div class="s-v">${num(val)}</div>${sub?`<div class="s-l">${sub}</div>`:""}</div>`;
+  // ① サマリー（新規・再応募に「うちA+B人選」参考値）
+  const summary=`<div class="panel"><div class="panel-head"><h2>① 応募サマリー</h2><span class="hint">${DATA.month}</span></div>
+    <div class="stat-grid">
+      ${statRef("新規応募",v.newApplications,`目標 ${num(v.targetNew)}・達成 ${rate}%`,v.newAB)}
+      ${stat("うち電話応募",v.phoneApplications,"内訳（MCGのみ）")}
+      ${statRef("再応募",v.reApplications,"",v.reAB)}
+      ${stat("目標(新規)",v.targetNew)}
+      <div class="stat"><div class="s-l">着地見込み</div><div class="s-v">${num(v.forecast)}</div><div class="s-l">${pill(v.forecast-v.targetNew)} 対目標</div></div>
+      ${stat("接触数",v.contacts)}
+    </div></div>`;
+  // ② 人選判定
+  const s=o.selection;
+  const selCard=(cls,val,l)=>`<div class="sel ${cls}"><div class="s-v">${num(val)}</div><div class="s-l">${l}</div></div>`;
+  const selection=`<div class="panel"><div class="panel-head"><h2>② 人選判定</h2><span class="hint">人数</span></div>
+    <div class="sel-grid">
+      ${selCard("tagA",s.A,"A人選")}${selCard("tagB",s.B,"B人選")}${selCard("tagC",s.C,"C人選")}${selCard("tagO",s.other,"その他")}${selCard("tagU",s.unknown,"不明")}
+    </div></div>`;
+  // ③ 歩留（区分ごとに A+B人選 参考列）
+  const groups=[["currentMonthNew","当月内応募・新規"],["within2MonthsNew","2ヶ月以内応募・新規"],["reApplication","再応募"]];
+  const stats=[["set","設定"],["done","実施"],["decided","決定"],["started","開始"]];
+  const frows=groups.map(([g,l])=>`<tr><td class="l">${l}</td>${stats.map(([k])=>`<td>${num(o.funnel[g][k])}</td>`).join("")}<td class="refcol">${num(o.funnel[g].ab)}</td></tr>`).join("");
+  const funnel=`<div class="panel"><div class="panel-head"><h2>③ 歩留（設定→実施→決定→開始）</h2></div>
+    <div class="legend"><span>設定＝アポ設定</span><span>実施＝面談実施</span><span>決定＝内定/決定</span><span>開始＝就業開始</span><span style="color:var(--coral)">A+B＝参考値</span></div>
+    <div class="scroll"><table>
+      <thead><tr><th class="l">応募区分</th>${stats.map(([,l])=>`<th>${l}</th>`).join("")}<th class="ref">A+B人選</th></tr></thead>
+      <tbody>${frows}</tbody>
+    </table></div></div>`;
+
+  $("#detailView").innerHTML=`
+    <button class="back" id="backBtn">← オフィス一覧に戻る</button>
+    <div class="detail-head">
+      <h2>${o.office}</h2><span class="pref">${(o.prefectures||[]).join("・")}</span>
+      <span style="margin-left:auto;display:flex;gap:6px"><button id="prevO">‹ 前</button><button id="nextO">次 ›</button></span>
+    </div>
+    ${summary}${selection}${funnel}`;
+  $("#listView").classList.add("hidden");
+  $("#detailView").classList.remove("hidden");
+  $("#backBtn").addEventListener("click",showList);
+  $("#prevO").addEventListener("click",()=>showDetail((i-1+DATA.offices.length)%DATA.offices.length));
+  $("#nextO").addEventListener("click",()=>showDetail((i+1)%DATA.offices.length));
+  window.scrollTo(0,0);
+}
+
+function showList(){ $("#detailView").classList.add("hidden"); $("#listView").classList.remove("hidden"); }
+
+function render(){
+  if(!DATA.daily||!DATA.daily.length) DATA.daily=genDaily(DATA.month); // モック補完
+  renderList(); showList();
+  const tag = API_URL ? "" : "（モックデータ）";
+  $("#updated").textContent="集計時刻: "+new Date(DATA.generatedAt).toLocaleString("ja-JP")+tag;
+}
+
+async function refresh(){
+  if(API_URL){
+    $("#updated").textContent="読み込み中…";
+    try{ DATA = await loadFromApi($("#monthSel").value); }
+    catch(err){ $("#updated").textContent="データ取得に失敗: "+err.message; return; }
+  }
+  render();
+}
+$("#refreshBtn").addEventListener("click",refresh);
+$("#monthSel").addEventListener("change",refresh);
+refresh();
+</script>
+</body>
+</html>
