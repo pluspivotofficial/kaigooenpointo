@@ -281,24 +281,26 @@ function hasAnyData_(o) {
 /* =========================================================================
  * マスタ
  * ========================================================================= */
+// 対応表: A列=都道府県, B列=オフィス（列位置で読む。ヘッダー行はスキップ）
 function loadPrefToOffice_() {
-  const rows = readSheetObjects_(CONFIG.PREF_OFFICE_SHEET_ID);
+  const vals = readSheetMatrix_(CONFIG.PREF_OFFICE_SHEET_ID);
   const map = {};
-  rows.forEach(r => {
-    const pref = (r['都道府県'] || '').toString().trim();
-    const office = (r['オフィス'] || r['オフィス名'] || '').toString().trim();
-    if (pref && office) map[pref] = office;
+  vals.forEach(row => {
+    const pref = (row[0] || '').toString().trim();
+    const office = (row[1] || '').toString().trim();
+    if (pref && office && pref !== '都道府県') map[pref] = office;
   });
   return map;
 }
 
+// 目標: A列=オフィス, B列=目標
 function loadTargets_() {
-  const rows = readSheetObjects_(CONFIG.TARGET_SHEET_ID);
+  const vals = readSheetMatrix_(CONFIG.TARGET_SHEET_ID);
   const map = {};
-  rows.forEach(r => {
-    const office = (r['オフィス'] || r['オフィス名'] || '').toString().trim();
-    const t = Number(r['目標'] || r['目標新規'] || 0);
-    if (office) map[office] = t;
+  vals.forEach(row => {
+    const office = (row[0] || '').toString().trim();
+    const t = Number(row[1] || 0);
+    if (office && office !== 'オフィス') map[office] = t;
   });
   return map;
 }
@@ -338,16 +340,13 @@ function csvToObjects_(text) {
   });
 }
 
-function readSheetObjects_(sheetId) {
-  const sh = SpreadsheetApp.openById(sheetId).getSheets()[0];
-  const data = sh.getDataRange().getValues();
-  if (data.length < 2) return [];
-  const header = data[0].map(h => (h || '').toString().trim());
-  return data.slice(1).map(row => {
-    const o = {};
-    header.forEach((h, i) => { o[h] = row[i]; });
-    return o;
-  });
+function readSheetMatrix_(sheetId) {
+  const ss = SpreadsheetApp.openById(sheetId);
+  const sh = ss.getSheets()[0];
+  const vals = sh.getDataRange().getValues();
+  Logger.log('master "%s" sheet="%s" rows=%s row0=%s row1=%s',
+    ss.getName(), sh.getName(), vals.length, JSON.stringify(vals[0]), JSON.stringify(vals[1]));
+  return vals;
 }
 
 function saveSummary_(month, json) {
