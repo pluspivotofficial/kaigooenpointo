@@ -1,79 +1,78 @@
 /**
- * 介護職応援ポイント 応募ダッシュボード — GAS 集計層（雛形）
+ * 介護職応援ポイント 応募ダッシュボード — GAS 集計層
  * 設計書: docs/dashboard-redesign.md
  *
  * 役割:
- *   1) runDailyAggregation() : 毎日1回、Driveフォルダの各CSV/マスタを突合して
+ *   1) runDailyAggregation() : 毎日1回、各フォルダの最新CSV/マスタを突合して
  *      集計済みサマリーJSONを生成し、CacheService + Drive(summary.json) に保存。
  *   2) doGet()               : 保存済みサマリーJSONを返すだけの薄いAPI。
  *   3) installDailyTrigger() : 毎日トリガーを登録（最初に1回だけ実行）。
  *
- * ※ ▼TODO/▼要確認 の箇所は、実データのヘッダー名・配置に合わせて調整してください。
- *   フロント(dashboard/index.html)が消費するJSONスキーマは設計書セクション5と同一。
+ * 実データのフォルダ/ファイル構成（2026-06 時点）:
+ *   総応募データ        … 「+ホップ 集客DB - 統合ツールデータ」CSV (UTF-8)
+ *   MCG稼働データ(③)    … 「【真子】集客項目出力…」CSV (Shift_JIS)  ※現状は未使用
+ *   MCG人選データ(⑤)    … 「+ホップ 集客DB - シート4」CSV (UTF-8)
+ *       └ 接触ステータス・歩留（新規）列・人選ｽﾃｰﾀｽ・都道府県を全て含むため、
+ *         接触/歩留/人選はこの1ファイルから集計する。
+ *
+ * ▼要確認（コード内 TODO）:
+ *   - 新規/再応募の判定ルール（重複応募・有効応募の解釈）… resolveKind_()
+ *   - 電話応募（総応募CSVに無い）の取り込み … MCG稼働データ(③)の利用要否
  */
 
 /* =========================================================================
- * 設定（ここだけ環境に合わせて書き換える）
+ * 設定（フォルダ/シートのIDは実環境のもの）
  * ========================================================================= */
 const CONFIG = {
-  // 各CSVを置く Driveフォルダ（このGoogleアカウント内に作成予定のフォルダID）
-  DATA_FOLDER_ID: 'PUT_DATA_FOLDER_ID',
-  // summary.json の出力先（同じフォルダでも可）
-  OUTPUT_FOLDER_ID: 'PUT_OUTPUT_FOLDER_ID',
+  // 各ソースのフォルダID（中の「最新更新CSV」を読む）
+  TOTAL_FOLDER_ID: '1VvdyRw6Fd2ox-GWQXMhSsapROLNFNbEC',      // 総応募データ
+  SELECTION_FOLDER_ID: '12GI5yYIje9h8YOetRJs3R20olCn5fe2e',  // MCG人選データ(⑤) 接触/歩留/人選
+  MCG_FOLDER_ID: '1CsO0ATFsQCKMZBmGSLP6lVdbxhH2ng3E',        // MCG稼働データ(③) ※電話応募取込み用(予約)
+
+  // 出力（summary.json の置き場所。親フォルダに出力）
+  OUTPUT_FOLDER_ID: '1B-WC1fRgXnYAhfAvxx3fGGXROqodB9vD',
   SUMMARY_FILENAME: 'summary.json',
 
   // マスタ（スプレッドシート）
-  PREF_OFFICE_SHEET_ID: 'PUT_PREF_OFFICE_SHEET_ID',  // 都道府県↔オフィス 対応表
-  PREF_OFFICE_SHEET_NAME: '対応表',
-  TARGET_SHEET_ID: 'PUT_TARGET_SHEET_ID',            // オフィス別 目標マスタ
-  TARGET_SHEET_NAME: '目標',
+  PREF_OFFICE_SHEET_ID: '1quGDrLDXBkJ4iVO0dUhkGtbqAvs8_QRSaZHRXeAiJK4', // 都道府県↔オフィス
+  TARGET_SHEET_ID: '1pd3HgF5zE8Njd7SLQZqTvbzyGMGtlIMhOAfUV7Sl7dY',     // オフィス別目標
 
-  // フォルダ内のファイル名パターン（最新更新分を採用）
-  FILE_PATTERN_TOTAL: /総応募|obo|integrated/i,   // ① obo-data-tool 統合CSV（新規/再応募の区分つき）
-  FILE_PATTERN_MCG: /mcg(?!.*人選)/i,             // ③ MCG 全CSV（接触・歩留）
-  FILE_PATTERN_SELECTION: /人選|selection/i,      // ⑤ 人選入り MCG データ
-
-  // CSV文字コード（MCG等がShift_JISの場合は 'Shift_JIS' に）
-  CSV_CHARSET: 'UTF-8',
+  // 文字コード（ソース別）
+  CHARSET_TOTAL: 'UTF-8',
+  CHARSET_SELECTION: 'UTF-8',
+  CHARSET_MCG: 'Shift_JIS',
 
   CACHE_KEY: 'dashboard_summary_v1',
   CACHE_TTL_SEC: 21600, // 6時間
   TZ: 'Asia/Tokyo',
 };
 
-// 各ソースの列名（▼実ヘッダーに合わせて調整）
+// 列名（実ヘッダーに準拠）
 const COL = {
-  total: {      // ① 総応募
-    phone: '電話番号',
-    office: 'オフィス名',
-    pref: '都道府県',
-    applyDate: '応募日',
-    kind: '区分',        // 値: 新規 / 再応募
+  total: {  // 総応募（統合ツールデータ）
+    applyDate: '（応募内容）応募日',
+    phone: '連絡先TEL',
+    office: '拠点',
+    pref: '都道府県名',
     media: '媒体',
+    dup: '重複応募',     // 同一人物の応募回数（1=初回）
+    valid: '有効応募',   // 1=有効としてカウント / 0=非カウント
   },
-  mcg: {        // ③ MCG
+  mcg: {    // MCG人選データ(⑤)（接触/歩留/人選）
     phone: '電話番号',
     pref: '都道府県',
     applyDate: '応募日',
     contactStatus: '接触ステータス',
-    channel: '流入経路',          // 電話応募の判定用（▼要確認）
+    media: '応募媒体',
     setNew: '設定日（新規）',
     doneNew: '実施日（新規）',
     decNew: '決定日（新規）',
     startNew: '開始日（新規）',
-  },
-  selection: {  // ⑤ 人選入りMCG
-    phone: '電話番号',
-    pref: '都道府県',
-    judge: '人選判定',   // 値: A / B / C / その他 / 不明 など
+    judge: '人選ｽﾃｰﾀｽ',   // 例: A人選（★★★★） / その他 / 空=不明
   },
 };
 
-const KIND_NEW = '新規';
-const KIND_RE = '再応募';
-const CONTACT_STATUSES = ['接触（電話）', '接触（フォーム）', '接触（メール）'];
-const PHONE_CHANNELS = ['電話'];      // ▼要確認: MCGで電話応募を示す値
-const AB_JUDGES = ['A', 'B'];
+const CONTACT_PREFIX = '接触'; // 接触 (電話)/(フォーム)/(メール) を前方一致で判定
 const FUNNEL_STAGES = [
   ['set', 'setNew'],
   ['done', 'doneNew'],
@@ -82,125 +81,104 @@ const FUNNEL_STAGES = [
 ];
 
 /* =========================================================================
- * Web API: 保存済みサマリーを返すだけ（重い処理はしない）
+ * Web API
  * ========================================================================= */
 function doGet(e) {
   const month = (e && e.parameter && e.parameter.month) || currentMonthKey_();
   let json = CacheService.getScriptCache().get(CONFIG.CACHE_KEY + ':' + month);
-  if (!json) {
-    json = readSummaryFromDrive_(month); // キャッシュ切れ時はDriveの恒久版を返す
-  }
-  if (!json) {
-    json = JSON.stringify({ error: 'summary not generated yet', month: month });
-  }
-  return ContentService.createTextOutput(json)
-    .setMimeType(ContentService.MimeType.JSON);
+  if (!json) json = readSummaryFromDrive_(month);
+  if (!json) json = JSON.stringify({ error: 'summary not generated yet', month: month });
+  return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
 }
 
 /* =========================================================================
  * メイン: 毎日の事前集計
  * ========================================================================= */
-function runDailyAggregation() {
-  const month = currentMonthKey_();
+function runDailyAggregation(monthArg) {
+  const month = monthArg || currentMonthKey_();
 
   // --- マスタ ---
-  const prefToOffice = loadPrefToOffice_();      // { '東京都': '新宿オフィス', ... }
-  const officePrefs = invertPrefMap_(prefToOffice); // { '新宿オフィス': ['東京都'], ... }
-  const targets = loadTargets_(month);           // { '新宿オフィス': 60, ... }
+  const prefToOffice = loadPrefToOffice_();          // { '東京都':'新宿オフィス', ... }
+  const officePrefs = invertPrefMap_(prefToOffice);  // { '新宿オフィス':['東京都','埼玉県',...] }
+  const targets = loadTargets_();                     // { '新宿オフィス':120, ... }
 
-  // --- 入力CSV ---
-  const folder = DriveApp.getFolderById(CONFIG.DATA_FOLDER_ID);
-  const totalRows = readLatestCsv_(folder, CONFIG.FILE_PATTERN_TOTAL);
-  const mcgRows = readLatestCsv_(folder, CONFIG.FILE_PATTERN_MCG);
-  const selRows = readLatestCsv_(folder, CONFIG.FILE_PATTERN_SELECTION);
+  // --- 入力CSV（各フォルダの最新） ---
+  const totalRows = readLatestCsv_(CONFIG.TOTAL_FOLDER_ID, CONFIG.CHARSET_TOTAL);
+  const mcgRows = readLatestCsv_(CONFIG.SELECTION_FOLDER_ID, CONFIG.CHARSET_SELECTION); // ⑤
 
   // 電話番号 → 区分 / 人選 の参照表
-  const kindByPhone = {};
-  totalRows.forEach(r => { kindByPhone[normPhone_(r[COL.total.phone])] = r[COL.total.kind]; });
-  const judgeByPhone = {};
-  selRows.forEach(r => { judgeByPhone[normPhone_(r[COL.selection.phone])] = (r[COL.selection.judge] || '').trim(); });
+  const kindByPhone = {};   // 'new' | 're'
+  const dailyMap = {};
+  const range = monthRange_(month);
 
-  // --- オフィスごとの集計器を初期化 ---
+  // --- オフィス集計器（マスタ基準で初期化） ---
   const acc = {};
   Object.keys(officePrefs).forEach(office => {
     acc[office] = newOfficeAcc_(office, officePrefs[office], targets[office] || 0);
   });
-  const officeOf = (pref, office) => office || prefToOffice[(pref || '').trim()] || null;
 
-  // 当月／直近2ヶ月（当月含む）の範囲
-  const range = monthRange_(month);
+  // 人選参照表（電話 → 区分文字 A/B/C/other/unknown）
+  const judgeByPhone = {};
+  mcgRows.forEach(r => { judgeByPhone[normPhone_(r[COL.mcg.phone])] = judgeLetter_(r[COL.mcg.judge]); });
 
   // --- ① 総応募: 新規/再応募・A+B参考値・日次 ---
-  const reUniqByOffice = {};            // 再応募の電話ユニーク化用 Set
-  const dailyMap = {};                  // 日次 全体
+  const reUniqByOffice = {};
   totalRows.forEach(r => {
-    const office = officeOf(r[COL.total.pref], r[COL.total.office]);
+    if (!isTruthy_(r[COL.total.valid])) return;     // 有効応募=1 のみ対象
+    const office = r[COL.total.office] || prefToOffice[(r[COL.total.pref] || '').trim()];
     if (!office || !acc[office]) return;
     const phone = normPhone_(r[COL.total.phone]);
-    const kind = (r[COL.total.kind] || '').trim();
+    const kind = resolveKind_(r);                   // 'new' | 're'
+    kindByPhone[phone] = kind;
     const d = parseDate_(r[COL.total.applyDate]);
-    const inMonth = d && d >= range.monthStart && d <= range.monthEnd;
-    const judgeAB = AB_JUDGES.indexOf(judgeByPhone[phone]) >= 0;
+    const inMonth = inRange_(d, range.monthStart, range.monthEnd);
+    const ab = judgeByPhone[phone] === 'A' || judgeByPhone[phone] === 'B';
 
-    if (kind === KIND_NEW && inMonth) {
-      acc[office].overview.newApplications += 1;     // Web新規
-      if (judgeAB) acc[office].overview.newAB += 1;
-    } else if (kind === KIND_RE && inMonth) {
-      reUniqByOffice[office] = reUniqByOffice[office] || new Set();
-      if (phone) reUniqByOffice[office].add(phone);  // 再応募は電話でユニーク
-      if (judgeAB) acc[office].overview.reAB += 1;    // ▼参考値: ユニーク化要否は要相談
-    }
-    // 日次（全体・当月）
-    if (inMonth && d) {
+    if (inMonth) {
+      if (kind === 'new') {
+        acc[office].overview.newApplications += 1;
+        if (ab) acc[office].overview.newAB += 1;
+      } else {
+        reUniqByOffice[office] = reUniqByOffice[office] || new Set();
+        if (phone) reUniqByOffice[office].add(phone);
+        if (ab) acc[office].overview.reAB += 1;
+      }
       const key = fmtDate_(d);
       dailyMap[key] = dailyMap[key] || { new: 0, re: 0 };
-      if (kind === KIND_NEW) dailyMap[key].new += 1;
-      else if (kind === KIND_RE) dailyMap[key].re += 1;
+      if (kind === 'new') dailyMap[key].new += 1; else dailyMap[key].re += 1;
     }
   });
   Object.keys(reUniqByOffice).forEach(o => { acc[o].overview.reApplications = reUniqByOffice[o].size; });
 
-  // --- ③ MCG: 電話新規・接触数・歩留 ---
+  // --- ⑤ MCG人選: 接触数・歩留・人選 ---
   mcgRows.forEach(r => {
-    const office = officeOf(r[COL.mcg.pref], null);
+    const office = prefToOffice[(r[COL.mcg.pref] || '').trim()];
     if (!office || !acc[office]) return;
     const phone = normPhone_(r[COL.mcg.phone]);
     const d = parseDate_(r[COL.mcg.applyDate]);
-    // 区分は総応募で判定（電話のみ応募は総応募に無い→ ▼要確認の補完ルール）
-    const kind = kindByPhone[phone] || inferKindForPhoneOnly_(r);
-
-    // 電話新規を新規応募数に加算
-    if (kind === KIND_NEW && isPhoneChannel_(r) && inRange_(d, range.monthStart, range.monthEnd)) {
-      acc[office].overview.newApplications += 1;
-      if (AB_JUDGES.indexOf(judgeByPhone[phone]) >= 0) acc[office].overview.newAB += 1;
-    }
 
     // 接触数
-    if (CONTACT_STATUSES.indexOf((r[COL.mcg.contactStatus] || '').trim()) >= 0) {
+    if ((r[COL.mcg.contactStatus] || '').trim().indexOf(CONTACT_PREFIX) === 0) {
       acc[office].overview.contacts += 1;
     }
 
-    // 歩留（全コホート（新規）列のみ参照。新規/再応募は総応募の区分で振り分け）
+    // 人選（A/B/C/その他/不明）
+    bumpSelection_(acc[office].selection, judgeLetter_(r[COL.mcg.judge]));
+
+    // 歩留（全コホート（新規）列のみ。区分は総応募由来）
+    const kind = kindByPhone[phone]; // 総応募に無い電話のみ応募は undefined → 現状スキップ(▼要確認)
     const cohort = funnelCohort_(kind, d, range);
     if (cohort) {
       const f = acc[office].funnel[cohort];
-      FUNNEL_STAGES.forEach(([outKey, colKey]) => {
-        if (notEmpty_(r[COL.mcg[colKey]])) f[outKey] += 1;
-      });
-      if (AB_JUDGES.indexOf(judgeByPhone[phone]) >= 0) f._abPhones.add(phone || Math.random());
+      FUNNEL_STAGES.forEach(([outKey, colKey]) => { if (notEmpty_(r[COL.mcg[colKey]])) f[outKey] += 1; });
+      if (judgeLetter_(r[COL.mcg.judge]) === 'A' || judgeLetter_(r[COL.mcg.judge]) === 'B') {
+        f._abPhones.add(phone || Math.random());
+      }
     }
   });
 
-  // --- ⑤ 人選: A/B/C/その他/不明 ---
-  selRows.forEach(r => {
-    const office = officeOf(r[COL.selection.pref], null);
-    if (!office || !acc[office]) return;
-    bumpSelection_(acc[office].selection, (r[COL.selection.judge] || '').trim());
-  });
-
-  // --- 仕上げ: 着地見込み / funnel.ab / daily 配列化 ---
-  const elapsed = elapsedDays_(month);
-  const totalDays = daysInMonth_(month);
+  // --- 仕上げ ---
+  const elapsed = elapsedDays_(month), totalDays = daysInMonth_(month);
   Object.values(acc).forEach(o => {
     o.overview.forecast = elapsed > 0
       ? Math.round(o.overview.newApplications / elapsed * totalDays)
@@ -216,15 +194,57 @@ function runDailyAggregation() {
     generatedAt: new Date().toISOString(),
     month: month,
     daily: daily,
-    offices: Object.values(acc).map(stripInternal_),
+    offices: Object.values(acc).filter(hasAnyData_),
   };
 
   saveSummary_(month, JSON.stringify(summary));
+  Logger.log('aggregated %s: offices=%s, dailyPoints=%s', month, summary.offices.length, daily.length);
   return summary;
 }
 
+/* 手元確認用: データのある月（例 2026-05）で実行 */
+function runForMay2026() { return runDailyAggregation('2026-05'); }
+
 /* =========================================================================
- * 集計器・補助
+ * 区分・人選の判定
+ * ========================================================================= */
+// ▼要確認: 新規/再応募の判定。暫定 = 重複応募が1なら新規・2以上なら再応募
+function resolveKind_(r) {
+  const dup = Number((r[COL.total.dup] || '').toString().trim()) || 0;
+  return dup <= 1 ? 'new' : 're';
+}
+
+// 人選ｽﾃｰﾀｽ文字列 → 'A'|'B'|'C'|'other'|'unknown'
+function judgeLetter_(v) {
+  const s = (v || '').toString().trim();
+  if (!s) return 'unknown';
+  if (s.indexOf('A人選') === 0) return 'A';
+  if (s.indexOf('B人選') === 0) return 'B';
+  if (s.indexOf('C人選') === 0) return 'C';
+  if (s.indexOf('その他') === 0) return 'other';
+  if (s.indexOf('不明') === 0) return 'unknown';
+  return 'other';
+}
+
+function bumpSelection_(sel, letter) {
+  if (letter === 'A') sel.A += 1;
+  else if (letter === 'B') sel.B += 1;
+  else if (letter === 'C') sel.C += 1;
+  else if (letter === 'other') sel.other += 1;
+  else sel.unknown += 1;
+}
+
+function funnelCohort_(kind, d, range) {
+  if (kind === 're') return 'reApplication';
+  if (kind === 'new') {
+    if (inRange_(d, range.monthStart, range.monthEnd)) return 'currentMonthNew';
+    if (inRange_(d, range.twoMonthStart, range.monthEnd)) return 'within2MonthsNew';
+  }
+  return null;
+}
+
+/* =========================================================================
+ * 集計器
  * ========================================================================= */
 function newOfficeAcc_(office, prefs, target) {
   const fnl = () => ({ set: 0, done: 0, decided: 0, started: 0, ab: 0, _abPhones: new Set() });
@@ -237,63 +257,32 @@ function newOfficeAcc_(office, prefs, target) {
   };
 }
 
-function bumpSelection_(sel, judge) {
-  if (judge === 'A') sel.A += 1;
-  else if (judge === 'B') sel.B += 1;
-  else if (judge === 'C') sel.C += 1;
-  else if (!judge || judge === '不明') sel.unknown += 1;
-  else sel.other += 1;
-}
-
-// 歩留コホート判定（新規/再応募とも（新規）列を見る。区分は総応募由来）
-function funnelCohort_(kind, d, range) {
-  if (kind === KIND_RE) return 'reApplication';
-  if (kind === KIND_NEW) {
-    if (inRange_(d, range.monthStart, range.monthEnd)) return 'currentMonthNew';
-    if (inRange_(d, range.twoMonthStart, range.monthEnd)) return 'within2MonthsNew';
-    // 当月コホートは2ヶ月コホートにも含める設計なら下行を有効化
-    // （現状は応募日が当月→当月のみ、前月→2ヶ月のみ にカウント）
-  }
-  return null;
-}
-
-// 電話のみ応募（総応募に無い）の区分補完 — ▼要確認のルール
-function inferKindForPhoneOnly_(r) {
-  // 暫定: MCG側に区分列があればそれを使う / 無ければ新規扱い
-  return KIND_NEW;
-}
-
-function isPhoneChannel_(r) {
-  return PHONE_CHANNELS.indexOf((r[COL.mcg.channel] || '').trim()) >= 0;
-}
-
-function stripInternal_(o) {
-  Object.values(o.funnel).forEach(f => { if (f._abPhones) delete f._abPhones; });
-  return o;
+function hasAnyData_(o) {
+  const v = o.overview;
+  const sel = Object.values(o.selection).reduce((a, b) => a + b, 0);
+  return v.newApplications || v.reApplications || v.contacts || v.targetNew || sel;
 }
 
 /* =========================================================================
- * マスタ読み込み
+ * マスタ
  * ========================================================================= */
 function loadPrefToOffice_() {
-  const rows = readSheetObjects_(CONFIG.PREF_OFFICE_SHEET_ID, CONFIG.PREF_OFFICE_SHEET_NAME);
+  const rows = readSheetObjects_(CONFIG.PREF_OFFICE_SHEET_ID);
   const map = {};
   rows.forEach(r => {
-    const pref = (r['都道府県'] || '').trim();
-    const office = (r['オフィス名'] || '').trim();
+    const pref = (r['都道府県'] || '').toString().trim();
+    const office = (r['オフィス'] || r['オフィス名'] || '').toString().trim();
     if (pref && office) map[pref] = office;
   });
   return map;
 }
 
-function loadTargets_(month) {
-  const rows = readSheetObjects_(CONFIG.TARGET_SHEET_ID, CONFIG.TARGET_SHEET_NAME);
+function loadTargets_() {
+  const rows = readSheetObjects_(CONFIG.TARGET_SHEET_ID);
   const map = {};
   rows.forEach(r => {
-    const m = (r['対象月'] || '').toString().trim();
-    if (m && m !== month) return; // 対象月列があれば当月のみ
-    const office = (r['オフィス名'] || '').trim();
-    const t = Number(r['目標新規'] || 0);
+    const office = (r['オフィス'] || r['オフィス名'] || '').toString().trim();
+    const t = Number(r['目標'] || r['目標新規'] || 0);
     if (office) map[office] = t;
   });
   return map;
@@ -309,18 +298,17 @@ function invertPrefMap_(prefToOffice) {
 }
 
 /* =========================================================================
- * I/O ユーティリティ
+ * I/O
  * ========================================================================= */
-function readLatestCsv_(folder, pattern) {
-  const files = folder.getFiles();
+function readLatestCsv_(folderId, charset) {
+  const files = DriveApp.getFolderById(folderId).getFiles();
   let best = null;
   while (files.hasNext()) {
     const f = files.next();
-    if (pattern.test(f.getName()) && (!best || f.getLastUpdated() > best.getLastUpdated())) best = f;
+    if (f.getName().toLowerCase().slice(-4) === '.csv' && (!best || f.getLastUpdated() > best.getLastUpdated())) best = f;
   }
-  if (!best) { Logger.log('CSV not found for ' + pattern); return []; }
-  const text = best.getBlob().getDataAsString(CONFIG.CSV_CHARSET);
-  return csvToObjects_(text);
+  if (!best) { Logger.log('CSV not found in folder ' + folderId); return []; }
+  return csvToObjects_(best.getBlob().getDataAsString(charset || 'UTF-8'));
 }
 
 function csvToObjects_(text) {
@@ -329,14 +317,13 @@ function csvToObjects_(text) {
   const header = data[0].map(h => (h || '').trim());
   return data.slice(1).map(row => {
     const o = {};
-    header.forEach((h, i) => { o[h] = row[i]; });
+    header.forEach((h, i) => { if (o[h] === undefined) o[h] = row[i]; }); // 重複ヘッダーは先頭優先
     return o;
   });
 }
 
-function readSheetObjects_(sheetId, sheetName) {
-  const sh = SpreadsheetApp.openById(sheetId).getSheetByName(sheetName);
-  if (!sh) { Logger.log('sheet not found: ' + sheetName); return []; }
+function readSheetObjects_(sheetId) {
+  const sh = SpreadsheetApp.openById(sheetId).getSheets()[0];
   const data = sh.getDataRange().getValues();
   if (data.length < 2) return [];
   const header = data[0].map(h => (h || '').toString().trim());
@@ -351,36 +338,35 @@ function saveSummary_(month, json) {
   CacheService.getScriptCache().put(CONFIG.CACHE_KEY + ':' + month, json, CONFIG.CACHE_TTL_SEC);
   const folder = DriveApp.getFolderById(CONFIG.OUTPUT_FOLDER_ID);
   const name = month + '_' + CONFIG.SUMMARY_FILENAME;
-  const existing = folder.getFilesByName(name);
-  if (existing.hasNext()) existing.next().setContent(json);
+  const it = folder.getFilesByName(name);
+  if (it.hasNext()) it.next().setContent(json);
   else folder.createFile(name, json, 'application/json');
 }
 
 function readSummaryFromDrive_(month) {
-  const folder = DriveApp.getFolderById(CONFIG.OUTPUT_FOLDER_ID);
-  const it = folder.getFilesByName(month + '_' + CONFIG.SUMMARY_FILENAME);
+  const it = DriveApp.getFolderById(CONFIG.OUTPUT_FOLDER_ID).getFilesByName(month + '_' + CONFIG.SUMMARY_FILENAME);
   return it.hasNext() ? it.next().getBlob().getDataAsString('UTF-8') : null;
 }
 
 /* =========================================================================
- * 日付・文字列ヘルパー
+ * 日付・文字列
  * ========================================================================= */
 function currentMonthKey_() { return Utilities.formatDate(new Date(), CONFIG.TZ, 'yyyy-MM'); }
 
 function monthRange_(month) {
   const [y, m] = month.split('-').map(Number);
-  const monthStart = new Date(y, m - 1, 1);
-  const monthEnd = new Date(y, m, 0, 23, 59, 59);
-  const twoMonthStart = new Date(y, m - 2, 1); // 当月含む直近2ヶ月＝前月1日〜当月末
-  return { monthStart, monthEnd, twoMonthStart };
+  return {
+    monthStart: new Date(y, m - 1, 1),
+    monthEnd: new Date(y, m, 0, 23, 59, 59),
+    twoMonthStart: new Date(y, m - 2, 1), // 当月含む直近2ヶ月＝前月1日〜当月末
+  };
 }
 
 function daysInMonth_(month) { const [y, m] = month.split('-').map(Number); return new Date(y, m, 0).getDate(); }
 
 function elapsedDays_(month) {
   const now = new Date();
-  const nowKey = Utilities.formatDate(now, CONFIG.TZ, 'yyyy-MM');
-  if (nowKey !== month) return daysInMonth_(month); // 過去月は満了
+  if (Utilities.formatDate(now, CONFIG.TZ, 'yyyy-MM') !== month) return daysInMonth_(month);
   return Number(Utilities.formatDate(now, CONFIG.TZ, 'd'));
 }
 
@@ -392,9 +378,10 @@ function parseDate_(v) {
   return isNaN(d.getTime()) ? null : d;
 }
 
-function fmtDate_(d) { return Utilities.formatDate(d, CONFIG.TZ, 'yyyy-MM-dd'); }
-function inRange_(d, a, b) { return d && d >= a && d <= b; }
+function fmtDate_(d) { return d ? Utilities.formatDate(d, CONFIG.TZ, 'yyyy-MM-dd') : ''; }
+function inRange_(d, a, b) { return !!d && d >= a && d <= b; }
 function notEmpty_(v) { return v !== null && v !== undefined && v.toString().trim() !== ''; }
+function isTruthy_(v) { const s = (v || '').toString().trim(); return s === '1' || s.toLowerCase() === 'true'; }
 function normPhone_(v) { return (v || '').toString().replace(/[^0-9]/g, ''); }
 
 /* =========================================================================

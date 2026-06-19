@@ -4,41 +4,40 @@
 構成: **案1（静的フロント + GAS は JSON API）**
 
 ```
-Driveの各CSV/マスタ ──(毎日トリガー)──▶ runDailyAggregation()
+各ソースのフォルダ(最新CSV) + マスタ2枚 ──(毎日トリガー)──▶ runDailyAggregation()
         │  突合・オフィス振り分け・集計
         ▼
-   summary.json（Cache + Drive）
+   {month}_summary.json（Cache + Drive）
         ▲
    doGet() が返すだけ ──fetch──▶ dashboard/index.html（GitHub Pages）
 ```
 
-## ファイル
-- `Code.gs` … 集計ロジック・`doGet`・トリガー
-- `appsscript.json` … マニフェスト（Webアプリ=匿名公開・JST）
+## 実データの構成（CONFIG に設定済み）
+| 用途 | 実体 | 文字コード | フォルダ/シートID |
+|------|------|-----------|------------------|
+| 総応募(①) | 「+ホップ 集客DB - 統合ツールデータ」CSV | UTF-8 | `1VvdyRw6Fd2ox-GWQXMhSsapROLNFNbEC` |
+| MCG人選(⑤) | 「+ホップ 集客DB - シート4」CSV（接触/歩留/人選を含む） | UTF-8 | `12GI5yYIje9h8YOetRJs3R20olCn5fe2e` |
+| MCG稼働(③) | 「【真子】集客項目出力…」CSV | Shift_JIS | `1CsO0ATFsQCKMZBmGSLP6lVdbxhH2ng3E`（現状未使用） |
+| 対応表 | スプレッドシート（列: `都道府県`/`オフィス`） | – | `1quGDrLDXBkJ4iVO0dUhkGtbqAvs8_QRSaZHRXeAiJK4` |
+| 目標 | スプレッドシート（列: `オフィス`/`目標`） | – | `1pd3HgF5zE8Njd7SLQZqTvbzyGMGtlIMhOAfUV7Sl7dY` |
+| 出力 | `{month}_summary.json` | – | 親 `1B-WC1fRgXnYAhfAvxx3fGGXROqodB9vD` |
+
+> 接触/歩留/人選は **⑤(UTF-8) 1ファイル** から集計（全列を含むため）。
+> ③(Shift_JIS) は電話応募の取り込みが必要になった場合に使用（現状は未使用）。
 
 ## セットアップ手順
-1. [script.google.com](https://script.google.com) で新規プロジェクトを作成し、`Code.gs` / `appsscript.json` を貼り付け。
-2. データ用フォルダを作成し、各CSV・マスタを配置（命名は `CONFIG.FILE_PATTERN_*` に合わせる）。
-3. `CONFIG` を実環境に合わせて設定:
-   - `DATA_FOLDER_ID` / `OUTPUT_FOLDER_ID`
-   - `PREF_OFFICE_SHEET_ID`（都道府県↔オフィス対応表）, `TARGET_SHEET_ID`（目標マスタ）
-   - `CSV_CHARSET`（MCGがShift_JISなら `'Shift_JIS'`）
-4. `COL`（各CSVの列名）を実際のヘッダーに合わせて調整。
-5. メニューで `runDailyAggregation` を一度手動実行 → 権限承認 → 動作確認。
-6. `installDailyTrigger` を一度実行 → 毎朝6時の自動集計を登録。
-7. 「デプロイ > 新しいデプロイ > ウェブアプリ」: アクセス=全員。発行URLを控える。
-8. `dashboard/index.html` の `API_URL` にそのURLを設定（フロント接続）。
+1. [script.google.com](https://script.google.com) で新規プロジェクト → `Code.gs` / `appsscript.json` を貼り付け。
+2. メニューで `runForMay2026` を実行（データのある 2026-05 で動作確認）→ 権限承認。
+3. ログ（offices / dailyPoints）と、親フォルダに `2026-05_summary.json` ができることを確認。
+4. `installDailyTrigger` を実行 → 毎朝6時の自動集計を登録。
+5. 「デプロイ > 新しいデプロイ > ウェブアプリ」: アクセス=全員。発行URLを控える。
+6. `dashboard/index.html` の `API_URL` にそのURLを設定（フロント接続）。
 
-## マスタの想定列
-- 対応表シート: `都道府県`, `オフィス名`
-- 目標シート: `対象月`(任意, 例 `2026-06`), `オフィス名`, `目標新規`
-
-## 実装時に確認が必要な点（コード内 ▼TODO/▼要確認）
-- 各CSVの**実ヘッダー名**（`COL` を合わせる）
-- 電話のみ応募（総応募CSVに無い）の**新規/再応募の判定ルール** … `inferKindForPhoneOnly_()`
-- MCGで**電話応募を示す列・値** … `COL.mcg.channel` / `PHONE_CHANNELS`
-- `reAB`（再応募のA+B参考値）を**ユニーク化**するか件数ベースか
-- 接触ステータス・人選判定の**表記ゆれ**（全角/半角・前後空白）
+## ▼要確認（業務ルール / コード内TODO）
+1. **新規/再応募の判定** … 現状 `resolveKind_()` は「重複応募≦1=新規・2以上=再応募／有効応募=1のみ集計」。
+   - 総応募CSVに区分列が無く、`重複応募`(回数) と `有効応募`(0/1) のみのため暫定実装。解釈が違えばここを直す。
+2. **電話応募の取り込み** … 電話応募は総応募CSVに無い。MCG稼働(③)から「電話由来の新規」を加える場合のキー列/値。
+3. **人選の表記** … `A人選（★★★★）`等は前方一致で判定。空欄=不明として扱う。
 
 ## 出力JSON
-設計書セクション5のスキーマと同一。`dashboard/index.html` の `SAMPLE_DATA` がそのまま参照例。
+設計書セクション5のスキーマと同一。`dashboard/index.html` の `SAMPLE_DATA` が参照例。
