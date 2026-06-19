@@ -6,7 +6,7 @@
 <title>応募ダッシュボード（モック）｜オフィス別</title>
 <!--
   ===========================================================================
-  軽量ダッシュボード モック（叩き台）
+  軽量ダッシュボード モック（叩き台）— ドリルダウン型（一覧 → オフィス詳細）
   - 外部ライブラリ・外部フォント・画像なし。単一HTML + バニラJSのみ＝軽い。
   - 下の SAMPLE_DATA を、GAS が返す集計済みJSON（docs/dashboard-redesign.md の
     スキーマと同一）に差し替えるだけで本番化できる。
@@ -17,9 +17,8 @@
   :root{
     --navy:#1A2855; --navy-soft:#4a5578; --ink:#1f2640; --muted:#7a809c;
     --line:#e7e9f2; --bg:#f5f6fb; --card:#ffffff;
-    --coral:#E85A4F; --coral-bg:#fdecea; --gold:#E8A93F;
+    --coral:#E85A4F; --gold:#E8A93F;
     --green:#1f9d6b; --green-bg:#e7f6ef; --red:#d14535; --red-bg:#fdeceb;
-    --blue:#3a6ea5;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   body{
@@ -27,31 +26,23 @@
     color:#1f2640; background:var(--bg); line-height:1.5; font-size:14px;
     -webkit-font-smoothing:antialiased;
   }
-  .wrap{max-width:1180px;margin:0 auto;padding:20px 18px 60px}
+  .wrap{max-width:1100px;margin:0 auto;padding:20px 18px 60px}
 
-  /* header */
   header.top{display:flex;flex-wrap:wrap;align-items:flex-end;gap:14px;justify-content:space-between;margin-bottom:18px}
   .title h1{font-size:20px;color:var(--navy);letter-spacing:.02em}
   .title p{font-size:12px;color:var(--muted);margin-top:2px}
   .controls{display:flex;gap:8px;align-items:center}
   select,button{font:inherit;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:8px;padding:7px 11px;cursor:pointer}
   button.refresh{background:var(--navy);color:#fff;border-color:var(--navy)}
-  .updated{font-size:11px;color:var(--muted)}
+  .updated{font-size:11px;color:var(--muted);margin-top:12px}
 
-  /* KPI strip */
-  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:18px}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:18px}
   .kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px}
   .kpi .k-label{font-size:11px;color:var(--muted)}
   .kpi .k-val{font-size:24px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums}
   .kpi .k-sub{font-size:11px;color:var(--muted)}
 
-  /* tabs */
-  .tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-bottom:14px;flex-wrap:wrap}
-  .tab{padding:9px 16px;border:none;background:none;border-radius:0;color:var(--muted);font-weight:600;border-bottom:2px solid transparent;border-radius:8px 8px 0 0}
-  .tab.active{color:var(--coral);border-bottom-color:var(--coral);background:#fff}
-
-  /* card + table */
-  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:16px}
   .panel-head{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
   .panel-head h2{font-size:14px;color:var(--navy)}
   .panel-head .hint{font-size:11px;color:var(--muted)}
@@ -59,27 +50,46 @@
   table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
   th,td{padding:9px 12px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line)}
   th.l,td.l{text-align:left}
-  thead th{background:#fafbff;color:var(--navy-soft);font-size:12px;font-weight:700;position:sticky;top:0}
-  tbody tr:hover{background:#fafbff}
+  thead th{background:#fafbff;color:var(--navy-soft);font-size:12px;font-weight:700}
   tbody td{font-size:13px}
   td.office{font-weight:600;color:var(--ink)}
   td.pref{font-size:11px;color:var(--muted);font-weight:400}
   tfoot td{background:#f4f5fb;font-weight:700;color:var(--navy);border-top:2px solid var(--line)}
-  .group-head th{background:#eef0f8;border-bottom:1px solid var(--line);color:var(--navy);text-align:center}
-  .sep{border-left:1px solid var(--line)}
+  .group-head th{background:#eef0f8;color:var(--navy);text-align:center}
 
-  /* mini bar (達成率) */
+  /* clickable office rows */
+  tr.click{cursor:pointer}
+  tr.click:hover{background:#f0f3ff}
+  tr.click td.office::after{content:"›";color:var(--muted);margin-left:8px;font-weight:700}
+
   .bar{display:inline-flex;align-items:center;gap:7px;justify-content:flex-end;width:100%}
-  .bar .track{flex:0 0 64px;height:7px;background:#eef0f6;border-radius:5px;overflow:hidden}
+  .bar .track{flex:0 0 60px;height:7px;background:#eef0f6;border-radius:5px;overflow:hidden}
   .bar .fill{height:100%;border-radius:5px;background:var(--coral)}
-  .bar .pct{font-size:11px;color:var(--muted);min-width:34px;text-align:right}
+  .bar .pct{font-size:11px;color:var(--muted);min-width:32px;text-align:right}
 
   .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700}
   .pill.up{background:var(--green-bg);color:var(--green)}
   .pill.down{background:var(--red-bg);color:var(--red)}
-  .note{font-size:11px;color:var(--muted);margin-top:10px}
-  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--muted);padding:10px 16px}
-  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px;vertical-align:middle}
+
+  /* detail view */
+  .back{background:none;border:none;color:var(--coral);font-weight:700;padding:0;cursor:pointer;margin-bottom:12px}
+  .detail-head{display:flex;align-items:baseline;gap:10px;margin-bottom:14px}
+  .detail-head h2{font-size:22px;color:var(--navy)}
+  .detail-head .pref{font-size:12px;color:var(--muted)}
+  .nav-mini{display:flex;gap:6px;align-items:center}
+  .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;padding:14px 16px}
+  .stat{border:1px solid var(--line);border-radius:10px;padding:11px 13px}
+  .stat .s-l{font-size:11px;color:var(--muted)}
+  .stat .s-v{font-size:21px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums}
+  .sel-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;padding:14px 16px}
+  .sel{text-align:center;border:1px solid var(--line);border-radius:10px;padding:11px 6px}
+  .sel .s-v{font-size:22px;font-weight:700;color:var(--navy)}
+  .sel .s-l{font-size:11px;color:var(--muted)}
+  .sel.tagA{border-top:3px solid var(--green)} .sel.tagB{border-top:3px solid var(--gold)}
+  .sel.tagC{border-top:3px solid var(--coral)} .sel.tagO{border-top:3px solid var(--navy-soft)}
+  .sel.tagU{border-top:3px solid #c2c7da}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--muted);padding:10px 16px 0}
+  .hidden{display:none}
 </style>
 </head>
 <body>
@@ -98,16 +108,19 @@
     </div>
   </header>
 
-  <div class="kpis" id="kpis"></div>
-
-  <div class="tabs" id="tabs">
-    <button class="tab active" data-t="overview">① 応募サマリー</button>
-    <button class="tab" data-t="selection">② 人選判定</button>
-    <button class="tab" data-t="funnel">③ 歩留</button>
+  <!-- 一覧ビュー -->
+  <div id="listView">
+    <div class="kpis" id="kpis"></div>
+    <div class="panel">
+      <div class="panel-head"><h2>オフィス一覧</h2><span class="hint">行をクリックで詳細へ</span></div>
+      <div class="scroll" id="listTable"></div>
+    </div>
   </div>
 
-  <div id="view"></div>
-  <p class="updated" id="updated" style="margin-top:12px"></p>
+  <!-- 詳細ビュー -->
+  <div id="detailView" class="hidden"></div>
+
+  <p class="updated" id="updated"></p>
 </div>
 
 <script>
@@ -150,128 +163,113 @@ async function loadFromApi(month){
 */
 
 let DATA = SAMPLE_DATA;
-let curTab = "overview";
 
 const $ = s => document.querySelector(s);
 const num = n => (n==null ? "–" : Number(n).toLocaleString("ja-JP"));
-function sum(arr, path){ return arr.reduce((a,o)=>a + path.split(".").reduce((x,k)=>x?.[k] ?? 0, o), 0); }
-
-/* ---- KPI strip（全オフィス合算） ---- */
-function renderKpis(){
-  const o = DATA.offices;
-  const newApp = sum(o,"overview.newApplications");
-  const reApp  = sum(o,"overview.reApplications");
-  const target = sum(o,"overview.targetNew");
-  const fore   = sum(o,"overview.forecast");
-  const contacts = sum(o,"overview.contacts");
-  const rate = target ? Math.round(newApp/target*100) : 0;
-  const foreDiff = fore - target;
-  $("#kpis").innerHTML = [
-    kpi("新規応募（合計）", num(newApp), `目標 ${num(target)}・達成 ${rate}%`),
-    kpi("再応募（合計）", num(reApp), "過去データと重複"),
-    kpi("着地見込み（合計）", num(fore), pill(foreDiff)+" 対目標"),
-    kpi("接触数（合計）", num(contacts), "MCG 由来"),
-    kpi("対象オフィス", num(o.length), DATA.month)
-  ].join("");
-}
-const kpi = (l,v,s)=>`<div class="kpi"><div class="k-label">${l}</div><div class="k-val">${v}</div><div class="k-sub">${s}</div></div>`;
+const sum = (arr,path) => arr.reduce((a,o)=>a + path.split(".").reduce((x,k)=>x?.[k] ?? 0, o), 0);
 const pill = d => d>=0 ? `<span class="pill up">+${num(d)}</span>` : `<span class="pill down">${num(d)}</span>`;
 
-/* ---- Table 1: 応募サマリー ---- */
-function tableOverview(){
-  const rows = DATA.offices.map(o=>{
+/* ---- 一覧: KPI ---- */
+function renderKpis(){
+  const o=DATA.offices;
+  const newApp=sum(o,"overview.newApplications"), target=sum(o,"overview.targetNew");
+  const fore=sum(o,"overview.forecast"), reApp=sum(o,"overview.reApplications"), contacts=sum(o,"overview.contacts");
+  const rate=target?Math.round(newApp/target*100):0;
+  const kpi=(l,v,s)=>`<div class="kpi"><div class="k-label">${l}</div><div class="k-val">${v}</div><div class="k-sub">${s}</div></div>`;
+  $("#kpis").innerHTML=[
+    kpi("新規応募（合計）",num(newApp),`目標 ${num(target)}・達成 ${rate}%`),
+    kpi("再応募（合計）",num(reApp),"過去データと重複"),
+    kpi("着地見込み（合計）",num(fore),pill(fore-target)+" 対目標"),
+    kpi("接触数（合計）",num(contacts),"MCG 由来"),
+    kpi("対象オフィス",num(o.length),DATA.month)
+  ].join("");
+}
+
+/* ---- 一覧: オフィステーブル（クリックで詳細） ---- */
+function renderList(){
+  renderKpis();
+  const rows=DATA.offices.map((o,i)=>{
     const v=o.overview, rate=v.targetNew?Math.min(999,Math.round(v.newApplications/v.targetNew*100)):0;
-    const fillPct=Math.min(100,rate);
-    const foreClass = v.forecast>=v.targetNew ? "up":"down";
-    return `<tr>
+    return `<tr class="click" data-i="${i}">
       <td class="l office">${o.office} <span class="pref">${(o.prefectures||[]).join("・")}</span></td>
       <td>${num(v.newApplications)}</td>
       <td>${num(v.reApplications)}</td>
       <td>${num(v.targetNew)}</td>
-      <td><div class="bar"><span class="pct">${rate}%</span><span class="track"><span class="fill" style="width:${fillPct}%;${rate>=100?'background:var(--green)':''}"></span></span></div></td>
-      <td><span class="pill ${foreClass}">${num(v.forecast)}</span></td>
+      <td><div class="bar"><span class="pct">${rate}%</span><span class="track"><span class="fill" style="width:${Math.min(100,rate)}%;${rate>=100?'background:var(--green)':''}"></span></span></div></td>
+      <td><span class="pill ${v.forecast>=v.targetNew?'up':'down'}">${num(v.forecast)}</span></td>
       <td>${num(v.contacts)}</td>
     </tr>`;
   }).join("");
   const o=DATA.offices;
-  return panel("① 応募サマリー","新規・再応募・目標・着地見込み・接触数",
-   `<table>
-      <thead><tr>
-        <th class="l">オフィス</th><th>新規応募</th><th>再応募</th><th>目標(新規)</th><th>達成率</th><th>着地見込み</th><th>接触数</th>
-      </tr></thead>
-      <tbody>${rows}</tbody>
-      <tfoot><tr>
-        <td class="l">合計</td>
-        <td>${num(sum(o,"overview.newApplications"))}</td>
-        <td>${num(sum(o,"overview.reApplications"))}</td>
-        <td>${num(sum(o,"overview.targetNew"))}</td>
-        <td></td>
-        <td>${num(sum(o,"overview.forecast"))}</td>
-        <td>${num(sum(o,"overview.contacts"))}</td>
-      </tr></tfoot>
-    </table>`);
+  $("#listTable").innerHTML=`<table>
+    <thead><tr><th class="l">オフィス</th><th>新規応募</th><th>再応募</th><th>目標(新規)</th><th>達成率</th><th>着地見込み</th><th>接触数</th></tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot><tr><td class="l">合計</td><td>${num(sum(o,"overview.newApplications"))}</td><td>${num(sum(o,"overview.reApplications"))}</td><td>${num(sum(o,"overview.targetNew"))}</td><td></td><td>${num(sum(o,"overview.forecast"))}</td><td>${num(sum(o,"overview.contacts"))}</td></tr></tfoot>
+  </table>`;
+  document.querySelectorAll("tr.click").forEach(tr=>tr.addEventListener("click",()=>showDetail(+tr.dataset.i)));
 }
 
-/* ---- Table 2: 人選判定 ---- */
-function tableSelection(){
-  const keys=[["A","A人選"],["B","B人選"],["C","C人選"],["other","その他"],["unknown","不明"]];
-  const rows=DATA.offices.map(o=>{
-    const s=o.selection, total=keys.reduce((a,[k])=>a+(s[k]||0),0);
-    return `<tr><td class="l office">${o.office}</td>${keys.map(([k])=>`<td>${num(s[k])}</td>`).join("")}<td><strong>${num(total)}</strong></td></tr>`;
-  }).join("");
-  const o=DATA.offices;
-  const foot=keys.map(([k])=>`<td>${num(sum(o,"selection."+k))}</td>`).join("");
-  const grand=keys.reduce((a,[k])=>a+sum(o,"selection."+k),0);
-  return panel("② 人選判定","A / B / C / その他 / 不明 の人数",
-   `<table>
-      <thead><tr><th class="l">オフィス</th>${keys.map(([,l])=>`<th>${l}</th>`).join("")}<th>計</th></tr></thead>
-      <tbody>${rows}</tbody>
-      <tfoot><tr><td class="l">合計</td>${foot}<td>${num(grand)}</td></tr></tfoot>
-    </table>`);
-}
-
-/* ---- Table 3: 歩留 ---- */
-function tableFunnel(){
+/* ---- 詳細: 1オフィス分の3テーブル ---- */
+function showDetail(i){
+  const o=DATA.offices[i], v=o.overview;
+  const rate=v.targetNew?Math.round(v.newApplications/v.targetNew*100):0;
+  const stat=(l,val,sub="")=>`<div class="stat"><div class="s-l">${l}</div><div class="s-v">${num(val)}</div>${sub?`<div class="s-l">${sub}</div>`:""}</div>`;
+  // ① サマリー
+  const summary=`<div class="panel"><div class="panel-head"><h2>① 応募サマリー</h2><span class="hint">${DATA.month}</span></div>
+    <div class="stat-grid">
+      ${stat("新規応募",v.newApplications,`目標 ${num(v.targetNew)}・達成 ${rate}%`)}
+      ${stat("再応募",v.reApplications)}
+      ${stat("目標(新規)",v.targetNew)}
+      <div class="stat"><div class="s-l">着地見込み</div><div class="s-v">${num(v.forecast)}</div><div class="s-l">${pill(v.forecast-v.targetNew)} 対目標</div></div>
+      ${stat("接触数",v.contacts)}
+    </div></div>`;
+  // ② 人選判定
+  const s=o.selection;
+  const selCard=(cls,val,l)=>`<div class="sel ${cls}"><div class="s-v">${num(val)}</div><div class="s-l">${l}</div></div>`;
+  const selection=`<div class="panel"><div class="panel-head"><h2>② 人選判定</h2><span class="hint">人数</span></div>
+    <div class="sel-grid">
+      ${selCard("tagA",s.A,"A人選")}${selCard("tagB",s.B,"B人選")}${selCard("tagC",s.C,"C人選")}${selCard("tagO",s.other,"その他")}${selCard("tagU",s.unknown,"不明")}
+    </div></div>`;
+  // ③ 歩留
   const groups=[["currentMonthNew","当月内応募・新規"],["within2MonthsNew","2ヶ月以内応募・新規"],["reApplication","再応募"]];
   const stats=[["set","設定"],["done","実施"],["decided","決定"],["started","開始"]];
-  const rows=DATA.offices.map(o=>{
-    return `<tr><td class="l office">${o.office}</td>`+
-      groups.map(([g],gi)=>stats.map(([s],si)=>`<td class="${si===0&&gi>0?'sep':''}">${num(o.funnel[g][s])}</td>`).join("")).join("")+
-      `</tr>`;
-  }).join("");
-  const o=DATA.offices;
-  const foot=groups.map(([g],gi)=>stats.map(([s],si)=>`<td class="${si===0&&gi>0?'sep':''}">${num(sum(o,"funnel."+g+"."+s))}</td>`).join("")).join("");
-  return panel("③ 歩留（設定→実施→決定→開始）","応募区分ごとの進捗",
-   `<div class="legend">
-      <span><span class="dot" style="background:var(--coral)"></span>設定＝アポ設定</span>
-      <span>実施＝面談実施</span><span>決定＝内定/決定</span><span>開始＝就業開始</span>
+  const frows=groups.map(([g,l])=>`<tr><td class="l">${l}</td>${stats.map(([k])=>`<td>${num(o.funnel[g][k])}</td>`).join("")}</tr>`).join("");
+  const funnel=`<div class="panel"><div class="panel-head"><h2>③ 歩留（設定→実施→決定→開始）</h2></div>
+    <div class="legend"><span>設定＝アポ設定</span><span>実施＝面談実施</span><span>決定＝内定/決定</span><span>開始＝就業開始</span></div>
+    <div class="scroll"><table>
+      <thead><tr><th class="l">応募区分</th>${stats.map(([,l])=>`<th>${l}</th>`).join("")}</tr></thead>
+      <tbody>${frows}</tbody>
+    </table></div></div>`;
+
+  $("#detailView").innerHTML=`
+    <button class="back" id="backBtn">← オフィス一覧に戻る</button>
+    <div class="detail-head">
+      <h2>${o.office}</h2><span class="pref">${(o.prefectures||[]).join("・")}</span>
+      <span class="nav-mini" style="margin-left:auto">
+        <button id="prevO">‹ 前</button><button id="nextO">次 ›</button>
+      </span>
     </div>
-    <table>
-      <thead>
-        <tr class="group-head"><th class="l" rowspan="2">オフィス</th>${groups.map(([,l])=>`<th colspan="4">${l}</th>`).join("")}</tr>
-        <tr>${groups.map((_,gi)=>stats.map(([,l],si)=>`<th class="${si===0&&gi>0?'sep':''}">${l}</th>`).join("")).join("")}</tr>
-      </thead>
-      <tbody>${rows}</tbody>
-      <tfoot><tr><td class="l">合計</td>${foot}</tr></tfoot>
-    </table>`);
+    ${summary}${selection}${funnel}`;
+  $("#listView").classList.add("hidden");
+  $("#detailView").classList.remove("hidden");
+  $("#backBtn").addEventListener("click",showList);
+  $("#prevO").addEventListener("click",()=>showDetail((i-1+DATA.offices.length)%DATA.offices.length));
+  $("#nextO").addEventListener("click",()=>showDetail((i+1)%DATA.offices.length));
+  window.scrollTo(0,0);
 }
 
-function panel(title,hint,inner){
-  return `<div class="panel"><div class="panel-head"><h2>${title}</h2><span class="hint">${hint}</span></div><div class="scroll">${inner}</div></div>`;
+function showList(){
+  $("#detailView").classList.add("hidden");
+  $("#listView").classList.remove("hidden");
 }
 
 function render(){
-  renderKpis();
-  $("#view").innerHTML = curTab==="overview"?tableOverview():curTab==="selection"?tableSelection():tableFunnel();
-  $("#updated").textContent = "集計時刻: "+new Date(DATA.generatedAt).toLocaleString("ja-JP")+"（モックデータ）";
+  renderList();
+  showList();
+  $("#updated").textContent="集計時刻: "+new Date(DATA.generatedAt).toLocaleString("ja-JP")+"（モックデータ）";
 }
 
-document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>{
-  document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
-  t.classList.add("active"); curTab=t.dataset.t; render();
-}));
 $("#refreshBtn").addEventListener("click",()=>{ /* 本番: DATA = await loadFromApi($("#monthSel").value); */ render(); });
-
 render();
 </script>
 </body>
