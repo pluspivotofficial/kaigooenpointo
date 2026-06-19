@@ -178,13 +178,24 @@ function runDailyAggregation(monthArg) {
     // 人選（当月応募・A/B/C/その他/不明）
     if (inMonth) bumpSelection_(acc[office].selection, letter);
 
-    // 歩留（全コホート（新規）列のみ。区分は総応募/電話応募由来）
-    const cohort = funnelCohort_(kindByPhone[phone], d, range);
-    if (cohort) {
-      const f = acc[office].funnel[cohort];
-      FUNNEL_STAGES.forEach(([outKey, colKey]) => { if (notEmpty_(r[COL.mcg[colKey]])) f[outKey] += 1; });
-      if (letter === 'A' || letter === 'B') f._abPhones.add(phone || Math.random());
+    // 歩留: コホート(応募日/区分) × 各ステージ「日付列が当月のもの」をカウント
+    // 当月内応募・新規 ⊂ 2ヶ月以内応募・新規（当月含む直近2ヶ月）なので両方に加算しうる。
+    const kind = kindByPhone[phone];
+    const cohorts = [];
+    if (kind === 'new') {
+      if (inRange_(d, range.monthStart, range.monthEnd)) cohorts.push('currentMonthNew');
+      if (inRange_(d, range.twoMonthStart, range.monthEnd)) cohorts.push('within2MonthsNew');
+    } else if (kind === 're') {
+      cohorts.push('reApplication');
     }
+    cohorts.forEach(c => {
+      const f = acc[office].funnel[c];
+      FUNNEL_STAGES.forEach(([outKey, colKey]) => {
+        const sd = parseDate_(r[COL.mcg[colKey]]);
+        if (inRange_(sd, range.monthStart, range.monthEnd)) f[outKey] += 1; // その日付が当月
+      });
+      if (letter === 'A' || letter === 'B') f._abPhones.add(phone || Math.random());
+    });
   });
 
   // --- 仕上げ ---
@@ -242,15 +253,6 @@ function bumpSelection_(sel, letter) {
   else if (letter === 'C') sel.C += 1;
   else if (letter === 'other') sel.other += 1;
   else sel.unknown += 1;
-}
-
-function funnelCohort_(kind, d, range) {
-  if (kind === 're') return 'reApplication';
-  if (kind === 'new') {
-    if (inRange_(d, range.monthStart, range.monthEnd)) return 'currentMonthNew';
-    if (inRange_(d, range.twoMonthStart, range.monthEnd)) return 'within2MonthsNew';
-  }
-  return null;
 }
 
 /* =========================================================================
