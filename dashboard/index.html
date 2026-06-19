@@ -177,12 +177,14 @@ const SAMPLE_DATA = {
   ]
 };
 
-/* 本番用（GAS Web API から集計済みJSONを取得）:
+/* GAS Web アプリ（doGet）のデプロイURL。空文字のままだと SAMPLE_DATA で動作（モック）。
+   本番は "https://script.google.com/macros/s/XXXX/exec" を設定するだけで接続される。 */
+const API_URL = "";
 async function loadFromApi(month){
-  const res = await fetch(`https://script.google.com/macros/s/XXXX/exec?month=${month}`);
+  const res = await fetch(`${API_URL}?month=${encodeURIComponent(month)}`);
+  if(!res.ok) throw new Error("API "+res.status);
   return await res.json();
 }
-*/
 
 /* モック専用: 日次データを生成（本番は集計層が daily を埋める） */
 function genDaily(month){
@@ -331,11 +333,20 @@ function showList(){ $("#detailView").classList.add("hidden"); $("#listView").cl
 function render(){
   if(!DATA.daily||!DATA.daily.length) DATA.daily=genDaily(DATA.month); // モック補完
   renderList(); showList();
-  $("#updated").textContent="集計時刻: "+new Date(DATA.generatedAt).toLocaleString("ja-JP")+"（モックデータ）";
+  const tag = API_URL ? "" : "（モックデータ）";
+  $("#updated").textContent="集計時刻: "+new Date(DATA.generatedAt).toLocaleString("ja-JP")+tag;
 }
 
-$("#refreshBtn").addEventListener("click",()=>{ /* 本番: DATA = await loadFromApi($("#monthSel").value); */ render(); });
-render();
+async function refresh(){
+  if(API_URL){
+    try{ DATA = await loadFromApi($("#monthSel").value); }
+    catch(err){ alert("データ取得に失敗しました: "+err.message); return; }
+  }
+  render();
+}
+$("#refreshBtn").addEventListener("click",refresh);
+$("#monthSel").addEventListener("change",refresh);
+refresh();
 </script>
 </body>
 </html>
