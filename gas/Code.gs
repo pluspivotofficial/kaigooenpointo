@@ -103,6 +103,9 @@ function doGet(e) {
 function runDailyAggregation(monthArg) {
   const month = monthArg || currentMonthKey_();
 
+  // 0) 応募ツールの最新CSVを総応募シート末尾へ追記（失敗しても集計は続行）
+  try { appendLatestTotalCsv(); } catch (e) { Logger.log('append skipped: ' + e); }
+
   // --- マスタ ---
   const prefToOffice = loadPrefToOffice_();          // { '東京都':'新宿オフィス', ... }
   const officePrefs = invertPrefMap_(prefToOffice);  // { '新宿オフィス':['東京都','埼玉県',...] }
@@ -489,6 +492,15 @@ function appendLatestTotalCsv() {
   if (rows.length) sh.getRange(sh.getLastRow() + 1, 1, rows.length, sheetHeader.length).setValues(rows);
   props.setProperty(KEY, f.getId());
   Logger.log('追記 %s 行 (%s)', rows.length, f.getName());
+}
+
+// 初期化用: フォルダにある現在の最新CSVを「追記済み」として記録だけする（追記はしない）。
+// 既に総応募シートへ取り込み済みの古いCSVが二重追記されるのを防ぐため、自動化の前に1回実行する。
+function markLatestCsvProcessed() {
+  const f = latestCsvFile_(CONFIG.TOTAL_FOLDER_ID);
+  if (!f) { Logger.log('CSVなし'); return; }
+  PropertiesService.getScriptProperties().setProperty('lastAppendedCsvId', f.getId());
+  Logger.log('追記済みとして記録: ' + f.getName());
 }
 
 /* =========================================================================
