@@ -281,27 +281,39 @@ function hasAnyData_(o) {
 /* =========================================================================
  * マスタ
  * ========================================================================= */
-// 対応表: A列=都道府県, B列=オフィス（列位置で読む。ヘッダー行はスキップ）
+// ヘッダー語から列を特定して2列を読む（先頭の空行/空列に依存しない）
+function parseMaster_(sheetId, keysA, keysB) {
+  const vals = readSheetMatrix_(sheetId);
+  let hr = -1, ca = -1, cb = -1;
+  for (let i = 0; i < vals.length; i++) {
+    const row = vals[i].map(c => (c || '').toString().trim());
+    const ia = row.findIndex(c => keysA.indexOf(c) >= 0);
+    const ib = row.findIndex(c => keysB.indexOf(c) >= 0);
+    if (ia >= 0 && ib >= 0) { hr = i; ca = ia; cb = ib; break; }
+  }
+  if (hr < 0) { Logger.log('master header not found: ' + sheetId); return []; }
+  const out = [];
+  for (let i = hr + 1; i < vals.length; i++) {
+    const a = (vals[i][ca] || '').toString().trim();
+    const b = (vals[i][cb] || '').toString().trim();
+    if (a) out.push([a, b]);
+  }
+  return out;
+}
+
+// 対応表: 都道府県 → オフィス
 function loadPrefToOffice_() {
-  const vals = readSheetMatrix_(CONFIG.PREF_OFFICE_SHEET_ID);
   const map = {};
-  vals.forEach(row => {
-    const pref = (row[0] || '').toString().trim();
-    const office = (row[1] || '').toString().trim();
-    if (pref && office && pref !== '都道府県') map[pref] = office;
-  });
+  parseMaster_(CONFIG.PREF_OFFICE_SHEET_ID, ['都道府県'], ['オフィス', 'オフィス名'])
+    .forEach(([pref, office]) => { if (office) map[pref] = office; });
   return map;
 }
 
-// 目標: A列=オフィス, B列=目標
+// 目標: オフィス → 目標
 function loadTargets_() {
-  const vals = readSheetMatrix_(CONFIG.TARGET_SHEET_ID);
   const map = {};
-  vals.forEach(row => {
-    const office = (row[0] || '').toString().trim();
-    const t = Number(row[1] || 0);
-    if (office && office !== 'オフィス') map[office] = t;
-  });
+  parseMaster_(CONFIG.TARGET_SHEET_ID, ['オフィス', 'オフィス名'], ['目標', '目標新規'])
+    .forEach(([office, t]) => { map[office] = Number(t) || 0; });
   return map;
 }
 
