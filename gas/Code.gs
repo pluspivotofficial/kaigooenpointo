@@ -224,7 +224,11 @@ function runDailyAggregation(monthArg) {
   };
 
   saveSummary_(month, JSON.stringify(summary));
-  Logger.log('aggregated %s: offices=%s, dailyPoints=%s', month, summary.offices.length, daily.length);
+  const sampleHeaders = totalRows[0] ? Object.keys(totalRows[0]).slice(0, 4).join(' | ') : '(none)';
+  Logger.log('aggregated %s: offices=%s, dailyPoints=%s | totalRows=%s, mcgRows=%s, prefMap=%s, parsedInRange=%s | totalHeaders[0..3]=%s',
+    month, summary.offices.length, daily.length,
+    totalRows.length, mcgRows.length, Object.keys(prefToOffice).length,
+    parsed.filter(x => inRange_(x.d, range.monthStart, range.monthEnd)).length, sampleHeaders);
   return summary;
 }
 
@@ -323,9 +327,10 @@ function readLatestCsv_(folderId, charset) {
 }
 
 function csvToObjects_(text) {
-  const data = Utilities.parseCsv(text);
+  const clean = (text || '').replace(/^﻿/, ''); // 先頭BOM除去
+  const data = Utilities.parseCsv(clean);
   if (!data || data.length < 2) return [];
-  const header = data[0].map(h => (h || '').trim());
+  const header = data[0].map(h => (h || '').replace(/^﻿/, '').trim());
   return data.slice(1).map(row => {
     const o = {};
     header.forEach((h, i) => { if (o[h] === undefined) o[h] = row[i]; }); // 重複ヘッダーは先頭優先
@@ -384,9 +389,9 @@ function elapsedDays_(month) {
 function parseDate_(v) {
   if (!v) return null;
   if (v instanceof Date) return v;
-  const s = v.toString().trim().replace(/\//g, '-');
-  const d = new Date(s);
-  return isNaN(d.getTime()) ? null : d;
+  const m = v.toString().match(/(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/); // 年月日（ゼロ詰め有無・時刻付き対応）
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
 }
 
 function fmtDate_(d) { return d ? Utilities.formatDate(d, CONFIG.TZ, 'yyyy-MM-dd') : ''; }
